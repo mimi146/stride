@@ -2,6 +2,8 @@
 
 A calm, fast task planner for people who want to get meaningful work done without burning out. Single HTML file, offline-first, with optional AI coaching and deep macOS integration.
 
+![Stride — Today view and AI Assistant](screenshots/stride-hero.png)
+
 Stride is built around one idea: **fewer decisions, less clutter, sustainable pace.** It guides you toward the next most important task instead of showing an endless list, warns you before you overcommit, and celebrates consistency over volume.
 
 ## Features
@@ -21,17 +23,60 @@ Stride is built around one idea: **fewer decisions, less clutter, sustainable pa
 
 **Eight themes**, light and dark, including Paper (warm sepia), Midnight, Forest, and Ink (monochrome).
 
-## Quick start
+## Installation
+
+### Prerequisites
+
+- Any modern browser. That's it for the basic app.
+- **For the macOS integrations** (SQLite storage, Calendar, Reminders, activity awareness): Python 3, which comes with Xcode Command Line Tools — run `xcode-select --install` if you're not sure.
+- **For AI features** (optional): an API key from Anthropic, OpenAI, OpenRouter, NVIDIA, or any compatible endpoint.
+
+### 1. Clone
 
 ```bash
 git clone https://github.com/YOUR-USERNAME/stride.git
 cd stride
-open index.html          # runs entirely in your browser, no build step
 ```
 
-On macOS, double-click **Stride.app** instead — it opens Stride in its own dock-able window and starts the local helper that powers SQLite storage, Calendar, Reminders, and activity features. The helper needs Python 3 (`xcode-select --install` if you don't have it).
+There is no build step and nothing to install — the app is a single HTML file.
 
-To use the AI features, open Settings → AI assistant and paste an API key. Keys are stored only in your browser and sent only to the provider you choose.
+### 2. Launch
+
+**macOS (recommended):** double-click **Stride.app** in the cloned folder. It opens Stride in its own dock-able window and silently starts the local helper. On the very first launch macOS may warn about an unidentified app — right-click Stride.app → **Open** → **Open**. If double-clicking does nothing, restore the execute bit (git preserves it, but some download methods don't):
+
+```bash
+chmod +x Stride.app/Contents/MacOS/stride
+```
+
+To keep it in your Dock: launch it, right-click the Dock icon → Options → **Keep in Dock**.
+
+**Any other OS, or browser-only:** open `index.html` directly. Everything works offline via browser storage. To also get SQLite persistence and the CORS proxy, run the helper manually in a second terminal:
+
+```bash
+python3 stride-helper.py
+```
+
+### 3. Verify it's working
+
+Open the app — you'll see a few starter tasks explaining the basics. Check Settings (gear icon, bottom-left):
+
+- **Local database** should read "stride.db · synced …" — the helper created `stride.db` in the project folder automatically and your data now survives browser resets. If it says "Not connected", the helper isn't running (harmless — the app falls back to browser storage).
+
+### 4. Optional features (each takes ~1 minute)
+
+All in Settings:
+
+- **AI assistant** — pick a provider, paste your API key, click **Test**. Then press `9` for the Assistant view and hit "Analyze my habits & workload". Keys never leave your machine except to call your chosen provider directly.
+- **Calendar** — paste an ICS URL (Google Calendar: Settings → your calendar → "Secret address in iCal format"), or tick **Use macOS Calendar**. First sync triggers a one-time macOS permission prompt.
+- **Apple Reminders** — toggle **Sync plan to Reminders**. Your plan mirrors to a "Stride" list, which iCloud puts on your iPhone; items checked off on the phone complete in Stride. Approve the permission prompt on first sync.
+- **Activity awareness** — toggle **Track my Mac activity** to get "you left this unfinished" reminders. Approve the Automation/Accessibility prompts (System Settings → Privacy & Security if they don't appear).
+
+### Troubleshooting
+
+- **"Helper offline" everywhere** → launch via Stride.app, or run `python3 stride-helper.py` manually; make sure port 8787 is free.
+- **AI Test fails with a CORS message** → your provider blocks browser calls; the helper fixes this automatically, so make sure it's running.
+- **Calendar/Reminders permission never appeared** → System Settings → Privacy & Security → Automation, allow `python3` for Calendar/Reminders; for activity titles also add `python3` under Accessibility.
+- **Nuking a test install** → quit the window, delete `stride.db`, and clear the site data in your browser. Next launch starts fresh.
 
 ## Architecture
 
