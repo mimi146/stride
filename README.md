@@ -1,10 +1,54 @@
+<div align="center">
+
 # Stride
 
-A calm, fast task planner for people who want to get meaningful work done without burning out. Single HTML file, offline-first, with optional AI coaching and deep macOS integration.
+**A calm task planner, built for the Mac and Apple ecosystem.**
 
-![Stride — Today view and AI Assistant](screenshots/stride-hero.png)
+No accounts. No servers. No build step. No subscription.
+Runs anywhere as a single HTML file — but on macOS it becomes something closer to a native app: SQLite on disk, Calendar.app, two-way Apple Reminders sync onto your iPhone, and Mac-activity-aware nudges, all driven by a small Python helper and a real Dock icon.
 
-Stride is built around one idea: **fewer decisions, less clutter, sustainable pace.** It guides you toward the next most important task instead of showing an endless list, warns you before you overcommit, and celebrates consistency over volume.
+[![License: MIT](https://img.shields.io/badge/license-MIT-3fa34d.svg)](LICENSE)
+[![macOS native integrations](https://img.shields.io/badge/macOS-Calendar_·_Reminders_·_iCloud-000000.svg?logo=apple&logoColor=white)](#deep-macos-integration)
+[![Single file](https://img.shields.io/badge/app-1_HTML_file-4f6df5.svg)](index.html)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-zero-4f6df5.svg)](index.html)
+[![Offline first](https://img.shields.io/badge/offline--first-yes-4f6df5.svg)](#privacy)
+
+[Quick start](#quick-start) · [Features](#features) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Privacy](#privacy)
+
+</div>
+
+---
+
+Most task apps compete on how much they can hold. Stride competes on how little you have to think about. It surfaces the next most important thing instead of an endless list, tells you *before* you overcommit a day, and treats "showed up today" as more important than "cleared 40 tasks today."
+
+If that resonates, **starring the repo** is the easiest way to help other burned-out list-makers find it.
+
+## Screenshots
+
+<table>
+<tr>
+<td width="34%"><img src="screenshots/stride-hero.png" alt="Today view and AI Assistant"></td>
+<td width="33%"><img src="screenshots/today-paper.png" alt="Today view, Paper theme"></td>
+<td width="33%"><img src="screenshots/assistant-midnight.png" alt="AI Assistant, Midnight theme"></td>
+</tr>
+<tr>
+<td align="center"><sub>Today + AI Assistant</sub></td>
+<td align="center"><sub>Paper theme</sub></td>
+<td align="center"><sub>Midnight theme</sub></td>
+</tr>
+</table>
+
+## Why Stride
+
+|  | Stride | Typical SaaS planner |
+|---|---|---|
+| Setup | Open one HTML file | Sign up, onboarding, download an app |
+| Data | Yours, on disk (`stride.db` / localStorage) | Their servers |
+| Offline | Full app, no network needed | Degraded or unusable |
+| Cost | Free, forever, MIT-licensed | Free tier → paywall |
+| AI | Optional, bring your own key, direct to provider | Bundled, usage-metered, or absent |
+| Codebase | ~3,000 lines you can actually read in an evening | Millions of lines you'll never see |
+| On Mac | Real Dock icon, Calendar.app, Reminders → iPhone via iCloud | Its own silo, no OS integration |
 
 ## Features
 
@@ -12,45 +56,36 @@ Stride is built around one idea: **fewer decisions, less clutter, sustainable pa
 
 **Burnout prevention, built in.** Daily capacity tracking that counts your real meetings, overload warnings with a one-click Rebalance, a top-3 daily plan instead of a task avalanche, focus mode with break nudges after 50 minutes, and a Review view that celebrates showing up — not task volume.
 
+### Deep macOS integration
+
+This is where Stride stops acting like a webpage. A small local Python helper (stdlib only, no install) turns it into something that behaves like a first-class citizen of the Apple ecosystem — all optional, all opt-in:
+
+- **A real Mac app** — `Stride.app` launches it in its own dock-able, chromeless window with its own icon, not a browser tab.
+- **SQLite persistence** — everything lives in `stride.db` on your disk, queryable with plain SQL, shared across browser windows.
+- **Calendar.app** — reads your real calendar (or any ICS URL), shows your schedule alongside tasks, and subtracts meeting time from your day's capacity automatically.
+- **Apple Reminders ↔ iPhone sync** — your plan mirrors to a "Stride" list that iCloud pushes to your phone; check something off on iOS and Stride completes it on the Mac next sync, no app on the phone required.
+- **Activity awareness** (opt-in) — notices what you were working on via System Events and reminds you about things you left unfinished.
+
 **AI coaching (bring your own key).** Connect Anthropic, OpenAI, NVIDIA NIM, OpenRouter, or any OpenAI/Anthropic-compatible endpoint. The Assistant analyzes your habits, workload, calendar, and (optionally) Mac activity, then delivers a daily report: habit insights, mistakes to watch out for, and your next three actions — each addable as a task in one click. It can also break big tasks into steps.
-
-**Deep macOS integration** (via a small local helper, all optional):
-
-- **SQLite persistence** — everything lives in `stride.db`, queryable with plain SQL and shared across browsers.
-- **Calendar** — reads Calendar.app or any ICS URL, shows your schedule alongside tasks, and subtracts meeting time from your day's capacity.
-- **Apple Reminders sync** — mirrors your plan to a "Stride" list that iCloud puts on your iPhone; check items off on the phone and Stride completes them.
-- **Activity awareness** (opt-in) — notices what you work on and reminds you about things you left unfinished.
 
 **Eight themes**, light and dark, including Paper (warm sepia), Midnight, Forest, and Ink (monochrome).
 
-## Installation
+**Not on a Mac?** Everything above the macOS section works the same in any modern browser, fully offline, via `localStorage` — you just won't get Calendar/Reminders/SQLite/activity awareness without the helper, which is macOS-only (AppleScript-driven).
 
-### Prerequisites
-
-- Any modern browser. That's it for the basic app.
-- **For the macOS integrations** (SQLite storage, Calendar, Reminders, activity awareness): Python 3, which comes with Xcode Command Line Tools — run `xcode-select --install` if you're not sure.
-- **For AI features** (optional): an API key from Anthropic, OpenAI, OpenRouter, NVIDIA, or any compatible endpoint.
-
-### 1. Clone
+## Quick start
 
 ```bash
-git clone https://github.com/YOUR-USERNAME/stride.git
+git clone https://github.com/mimi146/stride.git
 cd stride
 ```
 
-There is no build step and nothing to install — the app is a single HTML file.
+There's nothing to install — the app is a single HTML file.
 
-### 2. Launch
-
-**macOS (recommended):** double-click **Stride.app** in the cloned folder. It opens Stride in its own dock-able window and silently starts the local helper. On the very first launch macOS may warn about an unidentified app — right-click Stride.app → **Open** → **Open**. If double-clicking does nothing, restore the execute bit (git preserves it, but some download methods don't):
+**macOS (recommended):** double-click **Stride.app**. It opens Stride in its own dock-able window and silently starts the local helper. On first launch, macOS may warn about an unidentified app — right-click Stride.app → **Open** → **Open**. If double-clicking does nothing, restore the execute bit (git preserves it, but some download methods don't):
 
 ```bash
 chmod +x Stride.app/Contents/MacOS/stride
 ```
-
-To keep it in your Dock: launch it, right-click the Dock icon → Options → **Keep in Dock**.
-
-**Give Stride its own icon (optional, recommended):** the launcher window borrows Chrome's Dock icon. For a real Stride icon, install it as a Chrome app once — open `http://127.0.0.1:8787/` in regular Chrome (helper must be running), click the **install icon** at the right end of the address bar (or ⋮ → Cast, Save and Share → Install page as app), and confirm. Stride now lives in Launchpad and the Dock with its own icon and window; your data carries over automatically from `stride.db`.
 
 **Any other OS, or browser-only:** open `index.html` directly. Everything works offline via browser storage. To also get SQLite persistence and the CORS proxy, run the helper manually in a second terminal:
 
@@ -58,13 +93,22 @@ To keep it in your Dock: launch it, right-click the Dock icon → Options → **
 python3 stride-helper.py
 ```
 
-### 3. Verify it's working
+Open the app and you'll see a few starter tasks explaining the basics. Check Settings (gear icon, bottom-left) — "Local database" should read `stride.db · synced …` once the helper picks it up.
 
-Open the app — you'll see a few starter tasks explaining the basics. Check Settings (gear icon, bottom-left):
+<details>
+<summary><b>Full install guide</b> — icons, Dock, AI setup, Calendar, Reminders, activity awareness, troubleshooting</summary>
 
-- **Local database** should read "stride.db · synced …" — the helper created `stride.db` in the project folder automatically and your data now survives browser resets. If it says "Not connected", the helper isn't running (harmless — the app falls back to browser storage).
+### Prerequisites
 
-### 4. Optional features (each takes ~1 minute)
+- Any modern browser. That's it for the basic app.
+- **For the macOS integrations** (SQLite storage, Calendar, Reminders, activity awareness): Python 3, which comes with Xcode Command Line Tools — run `xcode-select --install` if you're not sure.
+- **For AI features** (optional): an API key from Anthropic, OpenAI, OpenRouter, NVIDIA, or any compatible endpoint.
+
+### Give Stride its own icon (optional, recommended)
+
+The launcher window borrows Chrome's Dock icon. For a real Stride icon, install it as a Chrome app once — open `http://127.0.0.1:8787/` in regular Chrome (helper must be running), click the **install icon** at the right end of the address bar (or ⋮ → Cast, Save and Share → Install page as app), and confirm. Stride now lives in Launchpad and the Dock with its own icon and window; your data carries over automatically from `stride.db`. To keep the launcher in your Dock instead: launch it, right-click the Dock icon → Options → **Keep in Dock**.
+
+### Optional features (each takes ~1 minute)
 
 All in Settings:
 
@@ -79,6 +123,8 @@ All in Settings:
 - **AI Test fails with a CORS message** → your provider blocks browser calls; the helper fixes this automatically, so make sure it's running.
 - **Calendar/Reminders permission never appeared** → System Settings → Privacy & Security → Automation, allow `python3` for Calendar/Reminders; for activity titles also add `python3` under Accessibility.
 - **Nuking a test install** → quit the window, delete `stride.db`, and clear the site data in your browser. Next launch starts fresh.
+
+</details>
 
 ## Architecture
 
@@ -98,6 +144,9 @@ Everything stays on your machine. No accounts, no telemetry, no servers. The onl
 
 Issues and pull requests welcome. The codebase is deliberately simple — one HTML file, one Python file — so read through, keep changes small and dependency-free, and include a test where practical (see the jsdom test patterns in the repo history).
 
+If Stride is useful to you, a ⭐ on the repo goes a long way — it's the main way people discover it.
+
 ## License
 
 [MIT](LICENSE) © 2026 Milan Niroula
+</content>

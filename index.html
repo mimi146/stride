@@ -674,10 +674,11 @@ function save() {
 }
 
 /* ---------- SQLite sync (via Stride helper → stride.db) ---------- */
-const dbSync = { on: false, at: 0, error: null };
+const dbSync = { on: false, at: 0, error: null, inited: false };
 let pushT;
 function scheduleDbPush() { clearTimeout(pushT); pushT = setTimeout(pushDb, 900); }
 async function pushDb() {
+  if (!dbSync.inited) return;   // NEVER push before we've checked what stride.db holds
   try {
     const r = await fetch("http://127.0.0.1:8787/state", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -692,15 +693,17 @@ async function initDbSync() {
   try {
     const r = await fetch("http://127.0.0.1:8787/state");
     const j = await r.json();
-    if (j.exists && j.state && (j.state.savedAt || 0) > (db.savedAt || 0)) {
-      db = mergeState(j.state);                                   // stride.db is newer (edited from another browser/app window)
+    const remoteReal = j.exists && j.state && (j.state.tasks || []).length > 0;
+    const localUntouched = !db.savedAt;                           // fresh origin / demo seed only
+    if (j.exists && j.state && ((j.state.savedAt || 0) > (db.savedAt || 0) || (remoteReal && localUntouched))) {
+      db = mergeState(j.state);                                   // stride.db wins: it's newer, or local is just a fresh seed
       try { localStorage.setItem("stride.v1", JSON.stringify(db)); } catch (e) {}
       applyTheme(); render();
-    } else {
-      pushDb();                                                   // seed or refresh the database
     }
     dbSync.on = true; dbSync.at = Date.now();
-  } catch (e) { dbSync.on = false; dbSync.error = "helper offline"; }
+    dbSync.inited = true;
+    if (!j.exists || (db.savedAt || 0) > ((j.state || {}).savedAt || 0)) pushDb();   // seed or refresh — only after comparing
+  } catch (e) { dbSync.on = false; dbSync.error = "helper offline"; dbSync.inited = true; }
 }
 
 /* ---------- task model ---------- */
@@ -2137,7 +2140,9 @@ function firstRun() {
   ];
   demo.forEach(t => db.tasks.push(t));
   db.habits.push({ id: uid(), name: "One meaningful task before noon", log: [] });
-  save();
+  // Write directly with savedAt left at 0 so a fresh demo seed can never
+  // outrank real data living in stride.db.
+  try { localStorage.setItem("stride.v1", JSON.stringify(db)); } catch (e) {}
 }
 
 /* ---------- boot ---------- */
