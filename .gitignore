@@ -1,0 +1,14 @@
+# Personal data — never commit. stride.db contains your tasks,
+# activity history, AND your AI provider API key.
+stride.db
+stride.db-shm
+stride.db-wal
+stride-backup-*.json
+stride-tasks.ics
+
+# OS / editor noise
+.DS_Store
+nohup.out
+__pycache__/
+*.pyc
+Stride.app alias

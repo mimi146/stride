@@ -1,0 +1,30 @@
+#!/bin/bash
+# Stride launcher — opens the planner in its own app window.
+# Part of Stride (MIT License). https://github.com/YOUR-USERNAME/stride
+# Portable: resolves the project folder from the app bundle's location.
+BUNDLE="$(cd "$(dirname "$0")/../.." && pwd)"       # .../Stride.app
+DIR="$(dirname "$BUNDLE")"                           # folder containing Stride.app
+HTML="$DIR/index.html"
+HELPER="$DIR/stride-helper.py"
+PROFILE="$HOME/Library/Application Support/StrideApp"
+HELPER_VERSION=4
+
+# Start (or replace an outdated) local connector
+PY="$(command -v python3 || true)"
+if [ -n "$PY" ] && [ -f "$HELPER" ]; then
+  if [ "$PY" != "/usr/bin/python3" ] || xcode-select -p >/dev/null 2>&1; then
+    PING="$(curl -s --max-time 1 http://127.0.0.1:8787/ping 2>/dev/null)"
+    if ! echo "$PING" | grep -q "\"version\": *$HELPER_VERSION"; then
+      lsof -ti :8787 2>/dev/null | xargs kill 2>/dev/null
+      sleep 0.5
+      cd "$DIR" && nohup "$PY" "$HELPER" >/dev/null 2>&1 &
+    fi
+  fi
+fi
+
+for B in "Google Chrome" "Microsoft Edge" "Brave Browser" "Chromium" "Arc"; do
+  if [ -d "/Applications/$B.app" ]; then
+    exec open -na "$B" --args --app="file://$HTML" --user-data-dir="$PROFILE" --window-size=1280,860
+  fi
+done
+exec open "$HTML"
