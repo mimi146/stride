@@ -50,6 +50,8 @@ chmod +x Stride.app/Contents/MacOS/stride
 
 To keep it in your Dock: launch it, right-click the Dock icon → Options → **Keep in Dock**.
 
+**Give Stride its own icon (optional, recommended):** the launcher window borrows Chrome's Dock icon. For a real Stride icon, install it as a Chrome app once — open `http://127.0.0.1:8787/` in regular Chrome (helper must be running), click the **install icon** at the right end of the address bar (or ⋮ → Cast, Save and Share → Install page as app), and confirm. Stride now lives in Launchpad and the Dock with its own icon and window; your data carries over automatically from `stride.db`.
+
 **Any other OS, or browser-only:** open `index.html` directly. Everything works offline via browser storage. To also get SQLite persistence and the CORS proxy, run the helper manually in a second terminal:
 
 ```bash

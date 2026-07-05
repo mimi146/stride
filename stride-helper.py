@@ -92,7 +92,18 @@ def load_state():
         return state
 
 PORT = 8787
-VERSION = 4
+VERSION = 5
+
+# Static files served so Stride runs at http://127.0.0.1:8787/ — a stable
+# origin that Chrome can install as a real app (own icon, own Dock entry).
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC = {
+    "/": ("index.html", "text/html; charset=utf-8"),
+    "/index.html": ("index.html", "text/html; charset=utf-8"),
+    "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "/icon-192.png": ("icon-192.png", "image/png"),
+    "/icon-512.png": ("icon-512.png", "image/png"),
+}
 FORWARD_HEADERS = ("authorization", "content-type", "x-api-key",
                    "anthropic-version", "accept")
 ALLOW_HEADERS = ("authorization, content-type, x-api-key, anthropic-version, "
@@ -125,6 +136,15 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        clean = self.path.split("?")[0]
+        if clean in STATIC:
+            fname, ctype = STATIC[clean]
+            try:
+                with open(os.path.join(APP_DIR, fname), "rb") as f:
+                    self._reply(200, f.read(), ctype)
+            except OSError:
+                self._reply(404, b'{"error":{"message":"file not found"}}')
+            return
         if self.path == "/ping":
             self._reply(200, json.dumps(
                 {"ok": True, "service": "stride-helper", "version": VERSION}).encode())

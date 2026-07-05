@@ -7,7 +7,7 @@ DIR="$(dirname "$BUNDLE")"                           # folder containing Stride.
 HTML="$DIR/index.html"
 HELPER="$DIR/stride-helper.py"
 PROFILE="$HOME/Library/Application Support/StrideApp"
-HELPER_VERSION=4
+HELPER_VERSION=5
 
 # Start (or replace an outdated) local connector
 PY="$(command -v python3 || true)"
@@ -22,9 +22,17 @@ if [ -n "$PY" ] && [ -f "$HELPER" ]; then
   fi
 fi
 
+# Prefer the served app (stable origin, installable as a real Chrome app);
+# fall back to the file if the helper couldn't start.
+URL="file://$HTML"
+for i in 1 2 3 4 5 6; do
+  if curl -s --max-time 1 http://127.0.0.1:8787/ping >/dev/null 2>&1; then URL="http://127.0.0.1:8787/"; break; fi
+  sleep 0.5
+done
+
 for B in "Google Chrome" "Microsoft Edge" "Brave Browser" "Chromium" "Arc"; do
   if [ -d "/Applications/$B.app" ]; then
-    exec open -na "$B" --args --app="file://$HTML" --user-data-dir="$PROFILE" --window-size=1280,860
+    exec open -na "$B" --args --app="$URL" --user-data-dir="$PROFILE" --window-size=1280,860
   fi
 done
-exec open "$HTML"
+exec open "$URL"
