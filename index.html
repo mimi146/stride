@@ -767,13 +767,16 @@ function newTask(p) {
     subtasks: [], links: [], repeat: null, mit: false, order: Date.now(),
     srs: null, srsId: null,           // srs: {stage:0..4}; srsId links a learning item to its revisions
     srsAsked: false,                  // user already decided about revision for this task — don't ask again
-    startTime: null                   // "HH:MM" time block, e.g. "14:30"
+    startTime: null,                  // "HH:MM" time block, e.g. "14:30"
+    isPlanParent: false,              // true once split into a day-by-day plan (see Task 4)
+    planId: null,                     // on a plan's chapter tasks: the parent's id
+    planIndex: null                   // on a plan's chapter tasks: 0-based day order
   }, p);
 }
 const tierRank = t => t.priority === 0 ? 1.5 : t.priority; // unsorted sits between Must and Should
 const tasksOf = f => db.tasks.filter(f).sort((a, b) => (b.mit - a.mit) || (tierRank(a) - tierRank(b)) || (a.order - b.order));
 const openTasks = () => db.tasks.filter(t => !t.done);
-const isInbox = t => !t.done && !t.due && !t.someday;
+const isInbox = t => !t.done && !t.due && !t.someday && !t.isPlanParent;
 const isToday = t => !t.done && t.due && daysDiff(t.due) <= 0;
 const isWeek = t => { if (t.done || !t.due) return false; const n = daysDiff(t.due); const dow = (new Date().getDay() + 6) % 7; return n >= 0 && n <= (6 - dow); };
 const isUpcoming = t => !t.done && t.due && daysDiff(t.due) > 0;
