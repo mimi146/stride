@@ -1005,7 +1005,7 @@ function score(t) {
   if (t.est >= 60 && hr < 12) s += 5;
   return s;
 }
-function topThree() { return openTasks().filter(t => !t.someday).sort((a, b) => score(b) - score(a)).slice(0, 3); }
+function topThree() { return openTasks().filter(t => !t.someday && !t.isPlanParent).sort((a, b) => score(b) - score(a)).slice(0, 3); }
 function dayLoad(iso) { return db.tasks.filter(t => !t.done && t.due === iso).reduce((s, t) => s + (t.est || 30), 0); }
 function overloadedDays(horizon = 7) {
   const out = [];
@@ -1357,7 +1357,7 @@ document.addEventListener("drop", e => {
   if (!src || !dst || src === dst) return;
   const above = e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2;
   if (src.due !== dst.due && dst.due) {                       // dragging across day groups reschedules
-    if (src.planId) shiftPlanSiblings(src, daysDiff(dst.due) - daysDiff(src.due));
+    if (src.planId && src.due) shiftPlanSiblings(src, daysDiff(dst.due) - daysDiff(src.due));
     src.due = dst.due;
   }
   src.order = dst.order + (above ? -0.5 : 0.5);
@@ -1785,7 +1785,7 @@ function toast(msg, actionLabel, actionFn) {
 
 /* ---------- focus mode ---------- */
 let focus = { taskId: null, start: null, tick: null, breakShown: false };
-function focusQueue() { return openTasks().filter(t => !t.someday).sort((a, b) => score(b) - score(a)); }
+function focusQueue() { return openTasks().filter(t => !t.someday && !t.isPlanParent).sort((a, b) => score(b) - score(a)); }
 function startFocus(id) {
   const q = focusQueue();
   const t = id ? findTask(id) : q[0];
