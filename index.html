@@ -1394,6 +1394,46 @@ function setDue(t, v) {
   t.someday = false;
   t.due = v === "0" ? todayStr() : v === "1" ? addDays(todayStr(), 1) : v === "wk" ? addDays(todayStr(), 7) : v || null;
 }
+function firstPlanDay(iso, skipWeekends) {
+  let d = iso;
+  while (skipWeekends && [0, 6].includes(parseISO(d).getDay())) d = addDays(d, 1);
+  return d;
+}
+function addPlanDay(iso, skipWeekends) {
+  let d = addDays(iso, 1);
+  while (skipWeekends && [0, 6].includes(parseISO(d).getDay())) d = addDays(d, 1);
+  return d;
+}
+function splitIntoPlan(t, lines, skipWeekends) {
+  let due = firstPlanDay(t.due || todayStr(), skipWeekends);
+  t.isPlanParent = true; t.due = null; t.repeat = null;
+  lines.forEach((title, i) => {
+    if (i > 0) due = addPlanDay(due, skipWeekends);
+    db.tasks.push(newTask({ title, project: t.project, due, planId: t.id, planIndex: i }));
+  });
+}
+function openSplitPlan(t) {
+  showModal(`
+    <div class="modal-head"><h2>Split into a day-by-day plan</h2>
+      <p>One line per day. Each becomes its own task, shown on its day under “${esc(t.title.slice(0, 60))}.”</p></div>
+    <div class="modal-body">
+      <textarea id="mPlanLines" placeholder="Ch.1: Introduction&#10;Ch.2: Processes&#10;Ch.3: Concurrency" style="min-height:160px"></textarea>
+      <label class="set-row" style="gap:10px;font-size:13px;border-bottom:none;padding:10px 0 0">
+        <input type="checkbox" id="mPlanSkipWeekends" style="width:16px;height:16px;accent-color:var(--accent);flex:none">
+        <span>Skip weekends</span>
+      </label>
+    </div>
+    <div class="modal-foot"><button class="pill-btn ghost" id="mPlanCancel">Cancel</button><button class="pill-btn" id="mPlanGo">Create plan</button></div>`);
+  $("#mPlanCancel").onclick = closeModal;
+  $("#mPlanGo").onclick = () => {
+    const lines = $("#mPlanLines").value.split("\n").map(l => l.trim()).filter(Boolean);
+    if (!lines.length) { toast("Add at least one line"); return; }
+    const skipWeekends = $("#mPlanSkipWeekends").checked;
+    splitIntoPlan(t, lines, skipWeekends);
+    closeModal(); state.selected = t.id; save(); render();
+    toast(`Plan created — ${lines.length} day${lines.length > 1 ? "s" : ""}`);
+  };
+}
 document.addEventListener("click", e => {
   const nav = e.target.closest("[data-view]");
   if (nav) { state.view = nav.dataset.view; state.search = ""; state.selected = null; render(); return; }
@@ -1498,6 +1538,9 @@ function renderDetail() {
       <div class="detail-row"><label>Repeat</label>
         <select id="dRep">${["", "daily", "weekdays", "weekly", "monthly"].map(r => `<option value="${r}" ${t.repeat === r || (!t.repeat && !r) ? "selected" : ""}>${r || "—"}</option>`).join("")}</select></div>
     </div>
+    ${!t.isPlanParent && !t.planId ? `<div class="detail-row"><label>Day-by-day plan</label>
+      <button class="add-sub" id="dSplitPlan">✎ Split into a day-by-day plan</button>
+    </div>` : ""}
     <div class="detail-row"><label>Spaced review · every 2 days</label>
       <div class="seg" id="dSrs">
         <button data-srs="off" class="${!t.srs ? "on" : ""}">Off</button>
@@ -1569,6 +1612,7 @@ function renderDetail() {
     const idx = db.tasks.indexOf(t); db.tasks.splice(idx, 1); state.selected = null; save(); render();
     toast("Task deleted", "Undo", () => { db.tasks.splice(idx, 0, t); save(); render(); });
   });
+  $("#dSplitPlan")?.addEventListener("click", () => openSplitPlan(t));
 }
 function breakDown(t) {
   const verb = (t.title.split(" ")[0] || "Work on");
