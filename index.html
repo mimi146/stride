@@ -1536,6 +1536,26 @@ document.addEventListener("keydown", e => {
 });
 
 /* ---------- detail panel ---------- */
+function renderPlanSection(t) {
+  const parentId = t.isPlanParent ? t.id : t.planId;
+  const parent = t.isPlanParent ? t : findTask(parentId);
+  if (!parent) return "";
+  const days = db.tasks.filter(x => x.planId === parentId).sort((a, b) => a.planIndex - b.planIndex);
+  const doneCount = days.filter(x => x.done).length;
+  return `<div class="detail-row"><label>Day-by-day plan</label>
+    <div class="srs-row" style="margin-bottom:10px">
+      <span class="srs-dots">${days.map(d => `<i class="${d.done ? "on" : ""}"></i>`).join("")}</span>
+      <span class="srs-title">${esc(parent.title)}</span>
+      <span class="srs-meta">${doneCount}/${days.length} done</span>
+    </div>
+    <div id="dPlanDays">${days.map(d => `
+      <div class="subtask ${d.done ? "done" : ""}" data-plan-jump="${d.id}" style="cursor:${d.id === t.id ? "default" : "pointer"}">
+        <span style="flex:1">${d.planIndex + 1}. ${esc(d.title)}</span>
+        <span class="srs-meta">${d.due ? fmtDue(d.due) : ""}</span>
+      </div>`).join("")}</div>
+  </div>`;
+}
+
 function renderDetail() {
   const panel = $("#detail");
   const t = state.selected && findTask(state.selected);
@@ -1560,9 +1580,9 @@ function renderDetail() {
       <div class="detail-row"><label>Repeat</label>
         <select id="dRep">${["", "daily", "weekdays", "weekly", "monthly"].map(r => `<option value="${r}" ${t.repeat === r || (!t.repeat && !r) ? "selected" : ""}>${r || "—"}</option>`).join("")}</select></div>
     </div>
-    ${!t.isPlanParent && !t.planId ? `<div class="detail-row"><label>Day-by-day plan</label>
+    ${t.isPlanParent || t.planId ? renderPlanSection(t) : `<div class="detail-row"><label>Day-by-day plan</label>
       <button class="add-sub" id="dSplitPlan">✎ Split into a day-by-day plan</button>
-    </div>` : ""}
+    </div>`}
     <div class="detail-row"><label>Spaced review · every 2 days</label>
       <div class="seg" id="dSrs">
         <button data-srs="off" class="${!t.srs ? "on" : ""}">Off</button>
@@ -1640,6 +1660,10 @@ function renderDetail() {
     toast("Task deleted", "Undo", () => { db.tasks.splice(idx, 0, t); save(); render(); });
   });
   $("#dSplitPlan")?.addEventListener("click", () => openSplitPlan(t));
+  $("#dPlanDays")?.addEventListener("click", e => {
+    const row = e.target.closest("[data-plan-jump]"); if (!row) return;
+    state.selected = row.dataset.planJump; render();
+  });
 }
 function breakDown(t) {
   const verb = (t.title.split(" ")[0] || "Work on");
