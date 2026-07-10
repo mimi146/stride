@@ -1388,6 +1388,16 @@ function completeTask(t) {
     const nxt = newTask({ title: t.title, notes: t.notes, priority: t.priority, est: t.est, project: t.project, repeat: t.repeat, subtasks: t.subtasks.map(s => ({ ...s, done: false })), due: nextOccurrence(t), links: [...t.links], startTime: t.startTime });
     t.repeat = null; db.tasks.push(nxt);
   }
+  if (t.planId) {
+    // every chapter gets its own spaced-revision chain, started automatically —
+    // asking "worth remembering?" once per chapter would be tedious
+    if (!t.srs) startRevision(t);
+    const siblings = db.tasks.filter(x => x.planId === t.planId);
+    if (siblings.every(x => x.done)) {
+      const parent = db.tasks.find(x => x.id === t.planId && x.isPlanParent);
+      if (parent && !parent.done) { parent.done = true; parent.doneAt = Date.now(); }
+    }
+  }
   maybeCelebrate();
 }
 function setDue(t, v) {
@@ -1488,10 +1498,14 @@ document.addEventListener("click", e => {
           const srsId = t.srsId || t.id;
           db.tasks = db.tasks.filter(x => !(x !== t && !x.done && x.srs && x.srsId === srsId && x.srs.stage === (t.srs ? t.srs.stage + 1 : 1)));
           t.srs = null;
+          if (t.planId) {
+            const parent = db.tasks.find(x => x.id === t.planId && x.isPlanParent);
+            if (parent && parent.done) { parent.done = false; parent.doneAt = null; }
+          }
         }
         else {
           completeTask(t);
-          maybeOfferRevision(t);
+          if (!t.planId) maybeOfferRevision(t);
         }
       }
       else if (a === "due") setDue(t, act.dataset.v);
@@ -1768,7 +1782,7 @@ function renderFocus() {
       <button class="pill-btn ghost" id="fLater">→ Tomorrow</button>
     </div>`;
   $("#fExit").onclick = exitFocus;
-  $("#fDone").onclick = () => { const t2 = findTask(focus.taskId); logFocus(); completeTask(t2); maybeOfferRevision(t2); save(); nextFocus(); };
+  $("#fDone").onclick = () => { const t2 = findTask(focus.taskId); logFocus(); completeTask(t2); if (!t2.planId) maybeOfferRevision(t2); save(); nextFocus(); };
   $("#fSkip").onclick = () => { logFocus(); nextFocus(focus.taskId); };
   $("#fLater").onclick = () => { const t2 = findTask(focus.taskId); logFocus(); setDue(t2, "1"); t2.mit = false; save(); nextFocus(focus.taskId); };
   $("#focusScreen").querySelectorAll("[data-fsub]").forEach(b => b.onclick = () => {
