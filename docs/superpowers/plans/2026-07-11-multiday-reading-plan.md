@@ -12,6 +12,7 @@
 
 - No new dependencies — stdlib Python only, no npm packages, no build step (per CLAUDE.md).
 - `stride.db*` holds real user data — never commit it, and treat direct sqlite3 edits to the user's live `stride.db` (if any are needed during manual verification) with the same care used in the earlier bug-fix session (inspect before writing, use transactions).
+- **Never POST to the running helper's live `/state` endpoint as part of a verification step.** `save_state()` deletes and fully replaces the `tasks`/`habits`/`projects` tables from whatever payload it's given — it is not additive. A verification POST containing only test rows silently destroys all real data (this happened once during this plan's execution and required restoring from an out-of-date backup; see the fixed version of Task 2's Step 5 for the safe pattern: import `save_state`/`load_state` directly and redirect `DB_PATH` to a throwaway temp file). Any check that needs to exercise `stride-helper.py`'s persistence code must run against an isolated scratch database, never against `stride.db` or the live `/state` endpoint.
 - This repo has **no automated test suite, linter, or build pipeline** (per CLAUDE.md). Every task's verification step is therefore a concrete manual procedure — a Node one-liner to catch syntax errors immediately (fast, catches typos before touching a browser), followed by exercising the actual behavior in a running browser (per the project's own `verify` skill convention) or a direct `sqlite3` inspection for the Python-side task. This is the adaptation of red/green/commit to a project that has deliberately stayed dependency-free.
 - Adding a task field requires three things to stay in sync: `newTask()` in `index.html`, the SQLite schema + column tuples in `stride-helper.py`'s `db_init`/`save_state`/`load_state`, and (only if a non-`undefined`-safe default is needed) `mergeState()` — per CLAUDE.md's "Task shape" note. This plan's new fields (`isPlanParent`, `planId`, `planIndex`) are all falsy-by-default and every check on them is a truthiness check, so no `mergeState()` change is needed — tasks saved before this feature existed will simply read as "not part of a plan," exactly like `srs`/`srsId` already behave for pre-SRS tasks.
 - Follow the codebase's existing idiom: time-based multiplicity (recurrence, revision, and now day-plans) is represented as separate task objects linked by an id field, never as buried per-task state that only renders inside a detail panel.
@@ -230,36 +231,41 @@ Replace with:
         } for r in c.execute("SELECT * FROM tasks")]
 ```
 
-- [ ] **Step 5: Verify — restart the helper and round-trip a plan-shaped task**
+- [ ] **Step 5: Verify — round-trip a plan-shaped task against an isolated scratch database**
 
 ```bash
 python3 -c "import ast; ast.parse(open('stride-helper.py').read())" && echo "syntax OK"
 ```
 Expected: `syntax OK`.
 
-Then (with `python3 stride-helper.py` running):
-```bash
-curl -s -X POST http://127.0.0.1:8787/state -H 'content-type: application/json' -d '{
-  "state": {"tasks": [{"id":"planparent1","title":"Read LLD notes","isPlanParent":true,"planId":null,"planIndex":null,"due":null,"notes":"","priority":0,"est":0,"project":null,"someday":false,"done":false,"doneAt":null,"createdAt":1,"repeat":null,"mit":false,"order":1,"subtasks":[],"links":[],"srs":null,"srsId":null,"srsAsked":false},
-  {"id":"planchild1","title":"Ch.1","isPlanParent":false,"planId":"planparent1","planIndex":0,"due":"2026-07-12","notes":"","priority":0,"est":0,"project":null,"someday":false,"done":false,"doneAt":null,"createdAt":2,"repeat":null,"mit":false,"order":2,"subtasks":[],"links":[],"srs":null,"srsId":null,"srsAsked":false}]}
-}' | head -c 200
-echo
-curl -s http://127.0.0.1:8787/state | node -e "
-let d=''; process.stdin.on('data',c=>d+=c).on('end',()=>{
-  const j = JSON.parse(d);
-  const parent = j.state.tasks.find(t=>t.id==='planparent1');
-  const child = j.state.tasks.find(t=>t.id==='planchild1');
-  console.log('parent.isPlanParent:', parent.isPlanParent, '(expect true)');
-  console.log('child.planId:', child.planId, '(expect planparent1)');
-  console.log('child.planIndex:', child.planIndex, '(expect 0)');
-});"
-```
-Expected: `parent.isPlanParent: true`, `child.planId: planparent1`, `child.planIndex: 0`.
+**Do not use the running helper's `/state` endpoint for this check — it replaces the *entire* live `tasks` table (delete-then-reinsert), so posting a small test payload to it destroys real data.** Instead, import `save_state`/`load_state`/`db_init` directly and point them at a throwaway temp file by reassigning the module's `DB_PATH` global — this exercises the exact same code with zero risk to `stride.db`:
 
-Then restore real data — this test wrote two throwaway tasks into the live `stride.db` alongside real tasks (the `/state` endpoint replaces the whole tasks table, so if the app was open, its next save will already overwrite these test rows; otherwise remove them directly):
 ```bash
-sqlite3 stride.db "DELETE FROM tasks WHERE id IN ('planparent1','planchild1');"
+python3 -c "
+import importlib.util, tempfile, os
+
+spec = importlib.util.spec_from_file_location('stride_helper', 'stride-helper.py')
+sh = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sh)
+
+sh.DB_PATH = os.path.join(tempfile.mkdtemp(), 'scratch.db')
+sh.db_init()
+sh.save_state({
+    'tasks': [
+        {'id': 'planparent1', 'title': 'Read LLD notes', 'isPlanParent': True},
+        {'id': 'planchild1', 'title': 'Ch.1', 'planId': 'planparent1', 'planIndex': 0, 'due': '2026-07-12'},
+    ],
+    'habits': [], 'projects': [],
+})
+loaded = sh.load_state()
+parent = next(t for t in loaded['tasks'] if t['id'] == 'planparent1')
+child = next(t for t in loaded['tasks'] if t['id'] == 'planchild1')
+print('parent.isPlanParent:', parent['isPlanParent'], '(expect True)')
+print('child.planId:', child['planId'], '(expect planparent1)')
+print('child.planIndex:', child['planIndex'], '(expect 0)')
+"
 ```
+Expected: `parent.isPlanParent: True`, `child.planId: planparent1`, `child.planIndex: 0`. The scratch database lives in a temp directory and is never connected to the running helper or `stride.db` — nothing further to clean up.
 
 - [ ] **Step 6: Commit**
 
