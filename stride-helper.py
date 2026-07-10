@@ -9,8 +9,11 @@ this machine and only forwards to the URL Stride specifies per-request.
 
 Stride.app starts it automatically. To run it manually:  python3 stride-helper.py
 """
+import html as htmllib
 import json
+import sys
 import os
+import re
 import sqlite3
 import subprocess
 import threading
@@ -21,8 +24,107 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stride.db")
 DB_LOCK = threading.Lock()
+REM_LOCK = threading.Lock()
 META_KEYS = ("v", "settings", "focusLog", "lastPlanDate", "celebratedDates",
-             "aiReport", "aiReportDate", "aiAutoDate", "calCache", "savedAt")
+             "aiReport", "aiReportDate", "aiAutoDate", "calCache", "savedAt",
+             "decks", "actDismissed")
+
+
+def pdf_to_text(data):
+    """Best-effort PDF text extraction. Uses pypdf when installed
+    (pip install pypdf), otherwise a small stdlib fallback that handles
+    common text-based PDFs (not scans — those need OCR)."""
+    try:
+        import io
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(data))
+        out = "\n".join((p.extract_text() or "") for p in reader.pages[:120])
+        if out.strip():
+            return out
+    except Exception:
+        pass
+    import zlib
+    parts = []
+    for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
+        s = m.group(1)
+        try:
+            s = zlib.decompress(s)
+        except Exception:
+            pass
+        try:
+            dec = s.decode("latin-1", "ignore")
+        except Exception:
+            continue
+        if "BT" not in dec:          # only PDF text blocks
+            continue
+        for sm in re.finditer(r"\(((?:[^()\\]|\\.)*)\)\s*(?:Tj|'|\")", dec):
+            parts.append(re.sub(r"\\([()\\])", r"\1", sm.group(1)))
+        for am in re.finditer(r"\[((?:[^\[\]\\]|\\.)*)\]\s*TJ", dec):
+            for sm in re.finditer(r"\(((?:[^()\\]|\\.)*)\)", am.group(1)):
+                parts.append(re.sub(r"\\([()\\])", r"\1", sm.group(1)))
+        parts.append("\n")
+    text = " ".join(parts)
+    text = "".join(ch for ch in text if ch == "\n" or 32 <= ord(ch) < 0xFFFE)
+    text = re.sub(r"[ \t]+", " ", text)
+    return re.sub(r"\n\s*\n\s*", "\n\n", text).strip()
+
+
+def fetch_readable(url):
+    """Fetch a URL and return {title, text} — plain text for flashcard generation.
+    Special cases: Google Docs (public) exported as text; YouTube title+description."""
+    m = re.search(r"docs\.google\.com/.*document/.*d/([\w-]+)", url)
+    if m:
+        url = "https://docs.google.com/document/d/%s/export?format=txt" % m.group(1)
+    
+    m_drive = re.search(r"drive\.google\.com/file/d/([\w-]+)", url)
+    if m_drive:
+        url = "https://drive.google.com/uc?export=download&id=%s" % m_drive.group(1)
+        
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Macintosh) StrideHelper/1.0",
+        "Accept-Language": "en"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        raw = r.read(3_000_000)
+        ctype = (r.headers.get("Content-Type") or "").lower()
+    
+    # PDFs (including Google Drive downloads) are extracted, not rejected
+    if raw[:5] == b"%PDF-" or "application/pdf" in ctype:
+        return {"title": url.rsplit("/", 1)[-1] or "document.pdf", "text": pdf_to_text(raw)[:24000]}
+    if any(b in ctype for b in ("image/", "zip", "octet-stream")):
+        return {"title": "Binary file", "text": ""}   # app will report "not enough readable text"
+
+    enc = "utf-8"
+    if "charset=" in ctype:
+        enc = ctype.split("charset=")[1].split(";")[0].strip() or "utf-8"
+    try:
+        body = raw.decode(enc, "replace")
+    except LookupError:
+        body = raw.decode("utf-8", "replace")
+
+    if "application/pdf" in ctype or raw[:5] == b"%PDF-":
+        return {"title": url.rsplit("/", 1)[-1], "text": pdf_to_text(raw)[:24000]}
+
+    if "text/html" not in ctype and "<html" not in body[:2000].lower():
+        return {"title": url.rsplit("/", 1)[-1], "text": body[:24000]}
+
+    tm = re.search(r"<title[^>]*>(.*?)</title>", body, re.S | re.I)
+    title = htmllib.unescape(tm.group(1).strip()) if tm else url
+
+    if "youtube.com/watch" in url or "youtu.be/" in url:
+        # title + creator description are the best we can get without an API key
+        dm = re.search(r'"shortDescription":"((?:[^"\\]|\\.)*)"', body)
+        desc = ""
+        if dm:
+            desc = dm.group(1).encode().decode("unicode_escape", "replace")
+        return {"title": title, "text": ("YouTube video: %s\n\nDescription:\n%s" % (title, desc))[:24000]}
+
+    body = re.sub(r"<(script|style|noscript|svg|nav|footer|header)[\s\S]*?</\1>", " ", body, flags=re.I)
+    body = re.sub(r"<br\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\n", body, flags=re.I)
+    body = re.sub(r"<[^>]+>", " ", body)
+    body = htmllib.unescape(body)
+    body = re.sub(r"[ \t]+", " ", body)
+    body = re.sub(r"\n\s*\n\s*", "\n\n", body).strip()
+    return {"title": title, "text": body[:24000]}
 
 
 def db_conn():
@@ -38,11 +140,17 @@ def db_init():
           id TEXT PRIMARY KEY, title TEXT, notes TEXT, due TEXT, priority INTEGER,
           est INTEGER, project TEXT, someday INTEGER, done INTEGER, done_at INTEGER,
           created_at INTEGER, repeat_rule TEXT, mit INTEGER, ord REAL,
-          subtasks TEXT, links TEXT);
+          subtasks TEXT, links TEXT, srs TEXT, srs_id TEXT, srs_asked INTEGER);
         CREATE TABLE IF NOT EXISTS habits(id TEXT PRIMARY KEY, name TEXT, log TEXT);
         CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, name TEXT, color TEXT);
         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
         """)
+        # migrate databases created before spaced repetition existed
+        for col in ("srs TEXT", "srs_id TEXT", "srs_asked INTEGER"):
+            try:
+                c.execute("ALTER TABLE tasks ADD COLUMN " + col)
+            except sqlite3.OperationalError:
+                pass
 
 
 def save_state(state):
@@ -54,13 +162,15 @@ def save_state(state):
         c.execute("DELETE FROM habits")
         c.execute("DELETE FROM projects")
         for t in state.get("tasks", []):
-            c.execute("INSERT OR REPLACE INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            c.execute("INSERT OR REPLACE INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 t.get("id"), t.get("title"), t.get("notes"), t.get("due"),
                 t.get("priority"), t.get("est"), t.get("project"),
                 int(bool(t.get("someday"))), int(bool(t.get("done"))),
                 t.get("doneAt"), t.get("createdAt"), t.get("repeat"),
                 int(bool(t.get("mit"))), t.get("order"),
-                json.dumps(t.get("subtasks", [])), json.dumps(t.get("links", []))))
+                json.dumps(t.get("subtasks", [])), json.dumps(t.get("links", [])),
+                json.dumps(t.get("srs")) if t.get("srs") else None, t.get("srsId"),
+                int(bool(t.get("srsAsked")))))
         for h in state.get("habits", []):
             c.execute("INSERT OR REPLACE INTO habits VALUES (?,?,?)",
                       (h.get("id"), h.get("name"), json.dumps(h.get("log", []))))
@@ -84,6 +194,9 @@ def load_state():
             "est": r[5], "project": r[6], "someday": bool(r[7]), "done": bool(r[8]),
             "doneAt": r[9], "createdAt": r[10], "repeat": r[11], "mit": bool(r[12]),
             "order": r[13], "subtasks": json.loads(r[14] or "[]"), "links": json.loads(r[15] or "[]"),
+            "srs": json.loads(r[16]) if len(r) > 16 and r[16] else None,
+            "srsId": r[17] if len(r) > 17 else None,
+            "srsAsked": bool(r[18]) if len(r) > 18 else False,
         } for r in c.execute("SELECT * FROM tasks")]
         state["habits"] = [{"id": r[0], "name": r[1], "log": json.loads(r[2] or "[]")}
                            for r in c.execute("SELECT * FROM habits")]
@@ -92,7 +205,7 @@ def load_state():
         return state
 
 PORT = 8787
-VERSION = 5
+VERSION = 9
 
 # Static files served so Stride runs at http://127.0.0.1:8787/ — a stable
 # origin that Chrome can install as a real app (own icon, own Dock entry).
@@ -107,7 +220,7 @@ STATIC = {
 FORWARD_HEADERS = ("authorization", "content-type", "x-api-key",
                    "anthropic-version", "accept")
 ALLOW_HEADERS = ("authorization, content-type, x-api-key, anthropic-version, "
-                 "anthropic-dangerous-direct-browser-access, x-stride-target, accept")
+                 "anthropic-dangerous-direct-browser-access, x-stride-target, accept, http-referer, x-title")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -119,7 +232,7 @@ class Handler(BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Access-Control-Allow-Headers", ALLOW_HEADERS)
 
     def _reply(self, code, data, ctype="application/json"):
         self.send_response(code)
@@ -157,6 +270,16 @@ class Handler(BaseHTTPRequestHandler):
                     {"exists": state is not None, "state": state}).encode())
             except Exception as e:
                 self._reply(500, json.dumps({"error": {"message": str(e)}}).encode())
+        elif self.path.startswith("/fetch"):
+            try:
+                q = self.path.split("url=", 1)
+                url = urllib.request.unquote(q[1]) if len(q) == 2 else ""
+                if not url.startswith(("http://", "https://")):
+                    self._reply(400, b'{"error":{"message":"invalid url"}}')
+                    return
+                self._reply(200, json.dumps(fetch_readable(url)).encode())
+            except Exception as e:
+                self._reply(502, json.dumps({"error": {"message": "fetch failed: " + str(e)[:160]}}).encode())
         elif self.path.startswith("/activity"):
             try:
                 hours = 12
@@ -169,6 +292,31 @@ class Handler(BaseHTTPRequestHandler):
             self.forward("GET")
 
     def do_POST(self):
+        if self.path == "/restart":
+            self._reply(200, b'{"ok":true}')
+            threading.Timer(0.2, lambda: os.execl(sys.executable, sys.executable, *sys.argv)).start()
+            return
+        if self.path.startswith("/extract"):
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length > 40_000_000:
+                    self._reply(413, b'{"error":{"message":"file too large (40MB max)"}}')
+                    return
+                data = self.rfile.read(length)
+                name = "document"
+                if "name=" in self.path:
+                    name = urllib.request.unquote(self.path.split("name=")[1].split("&")[0]) or name
+                if data[:5] == b"%PDF-":
+                    text = pdf_to_text(data)
+                else:
+                    text = data.decode("utf-8", "replace")
+                if not text.strip():
+                    self._reply(422, b'{"error":{"message":"no extractable text (scanned PDF? try: pip3 install pypdf, or paste the text instead)"}}')
+                    return
+                self._reply(200, json.dumps({"title": name, "text": text[:24000]}).encode())
+            except Exception as e:
+                self._reply(500, json.dumps({"error": {"message": str(e)[:160]}}).encode())
+            return
         if self.path == "/reminders/sync":
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -219,6 +367,7 @@ class Handler(BaseHTTPRequestHandler):
         for k, v in self.headers.items():
             if k.lower() not in skip_headers:
                 req.add_header(k, v)
+        req.add_header("User-Agent", "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 StrideHelper/1.0")
         try:
             with urllib.request.urlopen(req, timeout=120) as r:
                 data, code = r.read(), r.getcode()
@@ -360,6 +509,11 @@ out
 
 def reminders_sync(tasks):
     """tasks: [{id, title, due(iso), offset(int days from today)}]. Returns dict."""
+    with REM_LOCK:
+        return _reminders_sync_locked(tasks)
+
+
+def _reminders_sync_locked(tasks):
     # 1. read what's currently in the Stride list
     p = subprocess.run(["osascript", "-e", REM_READ_SCRIPT],
                        capture_output=True, text=True, timeout=90)
@@ -368,7 +522,7 @@ def reminders_sync(tasks):
         hint = " — allow python3 → Reminders in System Settings → Privacy → Automation" \
             if ("not allowed" in err.lower() or "-1743" in err) else ""
         return {"error": {"message": "Reminders access failed: " + err[:160] + hint}}
-    existing = {}          # stride_id -> {body, completed, name, due}
+    existing = {}          # stride_id -> [{body, completed, name, due}, ...] (usually 1, but piles happen)
     for line in p.stdout.splitlines():
         parts = line.split("||", 2)
         if len(parts) != 3 or not parts[0].startswith("stride:"):
@@ -376,20 +530,25 @@ def reminders_sync(tasks):
         body, completed, name = parts
         sid = body.split("|")[0][7:]
         due = body.split("|due:")[1] if "|due:" in body else ""
-        existing[sid] = {"body": body, "completed": completed.strip() == "true",
-                         "name": name, "due": due}
+        entry = {"body": body, "completed": completed.strip() == "true",
+                  "name": name, "due": due}
+        existing.setdefault(sid, []).append(entry)
 
     desired = {t["id"]: t for t in tasks if t.get("id") and t.get("title")}
-    completed_ids = [sid for sid, e in existing.items() if e["completed"]]
+    completed_ids = [sid for sid, es in existing.items() if any(e["completed"] for e in es)]
 
-    delete_bodies, creates = [], []
-    for sid, e in existing.items():
+    delete_bodies, creates = set(), []
+    for sid, es in existing.items():
         d = desired.get(sid)
-        stale = d and (e["name"] != d["title"] or e["due"] != d["due"])
-        if e["completed"] or not d or stale:
-            delete_bodies.append(e["body"])
-        if d and stale and not e["completed"]:
-            creates.append(d)                     # recreate with fresh title/date
+        any_completed = any(e["completed"] for e in es)
+        # a pile of duplicates for this id: clear all of them, recreate at most one
+        dupes = len(es) > 1
+        for e in es:
+            stale = d and (e["name"] != d["title"] or e["due"] != d["due"])
+            if e["completed"] or not d or stale or dupes:
+                delete_bodies.add(e["body"])
+        if d and not any_completed and (dupes or any(e["name"] != d["title"] or e["due"] != d["due"] for e in es)):
+            creates.append(d)                     # recreate once with fresh title/date
     for sid, d in desired.items():
         if sid not in existing and sid not in completed_ids:
             creates.append(d)
@@ -400,8 +559,14 @@ def reminders_sync(tasks):
         ops.append('  delete (reminders of L whose body = "%s")' % _as_escape(b))
     for i, t in enumerate(creates):
         off = max(0, int(t.get("offset") or 0))
+        st = t.get("startTime") or ""
+        if st and ":" in st:
+            parts = st.split(":")
+            secs = int(parts[0]) * 3600 + int(parts[1]) * 60
+        else:
+            secs = 32400  # default 09:00
         ops.append('  set d%d to (current date)' % i)
-        ops.append('  set time of d%d to 32400' % i)          # 09:00
+        ops.append('  set time of d%d to %d' % (i, secs))
         ops.append('  make new reminder at end of L with properties '
                    '{name:"%s", body:"stride:%s|due:%s", due date:(d%d + (%d * days))}'
                    % (_as_escape(t["title"]), _as_escape(t["id"]),

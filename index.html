@@ -188,6 +188,14 @@ main{flex:1; display:flex; flex-direction:column; min-width:0}
 .group-title{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)}
 .group-meta{font-size:12px; color:var(--faint); font-variant-numeric:tabular-nums}
 .group-meta.over{color:var(--warn); font-weight:600}
+.group-collapsed{margin-bottom:26px; animation:fadeUp .25s var(--ease)}
+.group-collapsed>summary{list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:9px; padding:0 4px 8px}
+.group-collapsed>summary::-webkit-details-marker{display:none}
+.group-collapsed>summary::before{content:"›"; display:inline-block; color:var(--faint); transition:transform .15s var(--ease); font-weight:700}
+.group-collapsed[open]>summary::before{transform:rotate(90deg)}
+.zone-label{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--faint);
+  padding-bottom:8px; margin-bottom:10px; border-bottom:1px solid var(--border)}
+.zone-label:not(:first-child){margin-top:8px}
 @keyframes fadeUp{from{opacity:0; transform:translateY(6px)}to{opacity:1; transform:none}}
 
 /* ---- Task rows ---- */
@@ -232,6 +240,7 @@ main{flex:1; display:flex; flex-direction:column; min-width:0}
 .chip.overdue{background:var(--danger-soft); color:var(--danger)}
 .chip.p1{background:var(--danger-soft); color:var(--p1)}
 .chip.p2{background:var(--warn-soft); color:var(--p2)}
+.chip.p3{background:color-mix(in srgb, var(--p3) 16%, transparent); color:var(--p3)}
 .chip.rec{background:var(--ok-soft); color:var(--ok)}
 .task-progress{font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums}
 .triage{display:none; gap:4px; margin-top:8px}
@@ -432,6 +441,34 @@ main{flex:1; display:flex; flex-direction:column; min-width:0}
 .celebrate i{position:absolute; width:8px; height:8px; border-radius:2px; top:-12px; animation:fall 1.6s var(--ease) forwards}
 @keyframes fall{to{transform:translateY(105vh) rotate(540deg); opacity:.2}}
 
+/* ---- Spaced repetition ---- */
+.chip.srs{background:var(--accent-soft); color:var(--accent-text)}
+.srs-row{
+  display:flex; align-items:center; gap:12px; background:var(--panel);
+  border:1px solid var(--border); border-radius:var(--r-md); padding:11px 14px;
+  margin-bottom:7px; box-shadow:var(--shadow-1); font-size:14px;
+}
+.srs-row.fin{opacity:.6}
+.srs-dots{display:flex; gap:4px; flex:none}
+.srs-dots i{width:9px; height:9px; border-radius:99px; background:var(--panel-2); border:1px solid var(--border)}
+.srs-dots i.on{background:var(--accent); border-color:var(--accent)}
+.srs-title{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500}
+.srs-meta{font-size:12px; color:var(--muted); flex:none; font-variant-numeric:tabular-nums}
+
+/* ---- Flashcards ---- */
+.card-q{font-size:clamp(22px,3.6vw,34px); font-weight:700; max-width:720px; line-height:1.3; letter-spacing:-.02em}
+.card-a{
+  margin-top:28px; font-size:17.5px; line-height:1.6; max-width:640px; color:var(--text);
+  font-family:ui-serif, "New York", Georgia, serif;
+  background:var(--panel); border:1px solid var(--border); border-radius:var(--r-lg);
+  padding:20px 28px; box-shadow:var(--shadow-1); animation:fadeUp .22s var(--ease);
+}
+.k-hint{font-family:var(--mono); font-size:10px; opacity:.65; margin-left:7px}
+.deck-row .pill-btn{padding:5px 13px; font-size:12.5px}
+.deck-row .icon-btn{width:30px; height:30px}
+.cs-stats{display:flex; gap:14px; justify-content:center; margin-top:20px; color:var(--muted); font-size:14px}
+.cs-stats b{color:var(--text)}
+
 /* ---- Calendar events ---- */
 .cal-ev{
   display:flex; align-items:center; gap:12px; padding:7px 14px; margin-bottom:5px;
@@ -571,7 +608,7 @@ kbd{font-family:var(--mono); font-size:11px; background:var(--panel-2); border:1
       <div class="capture">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
         <input id="captureInput" type="text" autocomplete="off" enterkeyhint="done"
-          placeholder="What needs doing?  “Review deck tomorrow !high ~45m #work”"
+          placeholder="What needs doing?  “Review deck tomorrow !must ~45m #work”"
           aria-label="Quick add task">
         <span class="hint">N</span>
       </div>
@@ -588,6 +625,9 @@ kbd{font-family:var(--mono); font-size:11px; background:var(--panel-2); border:1
 
 <!-- Focus screen -->
 <div class="focus-screen" id="focusScreen" role="dialog" aria-label="Focus mode"></div>
+
+<!-- Flashcard review screen -->
+<div class="focus-screen" id="cardScreen" role="dialog" aria-label="Flashcard review"></div>
 
 <!-- Overlays -->
 <div class="overlay" id="paletteOverlay"><div class="modal palette" role="dialog" aria-label="Command palette">
@@ -625,6 +665,7 @@ function fmtDue(iso) {
   return parseISO(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 function fmtMin(m) { if (!m) return ""; return m >= 60 ? (m % 60 ? Math.floor(m / 60) + "h " + m % 60 + "m" : m / 60 + "h") : m + "m"; }
+function fmtTime(hm) { if (!hm) return ""; const [h, m] = hm.split(":").map(Number); const ap = h >= 12 ? "PM" : "AM"; return (h % 12 || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + " " + ap; }
 
 /* ---------- store ---------- */
 const DEFAULTS = {
@@ -644,6 +685,7 @@ const DEFAULTS = {
   celebratedDates: [],
   aiReport: null, aiReportDate: null, aiAutoDate: null,
   calCache: { ts: 0, events: [] },  // [{date,"HH:MM"|null,mins,title}]
+  decks: [],                        // AI flashcard decks: {id,taskId,title,url,cards:[{id,q,a,box,due,reps,lapses}]}
   savedAt: 0
 };
 function mergeState(d) {
@@ -658,7 +700,15 @@ let db = load();
 function load() {
   try {
     const raw = localStorage.getItem("stride.v1");
-    if (raw) return mergeState(JSON.parse(raw));
+    if (raw) {
+      const d = mergeState(JSON.parse(raw));
+      // one-time fix: clear stale srsAsked on open recurring tasks so revision offer works
+      if (!d._fixedSrsRepeat) {
+        (d.tasks || []).filter(t => !t.done && t.repeat && t.srsAsked).forEach(t => t.srsAsked = false);
+        d._fixedSrsRepeat = true;
+      }
+      return d;
+    }
   } catch (e) { console.warn("load failed", e); }
   return JSON.parse(JSON.stringify(DEFAULTS));
 }
@@ -707,14 +757,21 @@ async function initDbSync() {
 }
 
 /* ---------- task model ---------- */
+// spaced revision: each of the 3 reviews is scheduled 2 days after the previous
+// stage is actually completed, not on fixed calendar days from the original learning day.
+const SRS_PLAN = [2, 2, 2];
 function newTask(p) {
   return Object.assign({
     id: uid(), title: "", notes: "", due: null, priority: 0, est: 0,
     project: null, someday: false, done: false, doneAt: null, createdAt: Date.now(),
-    subtasks: [], links: [], repeat: null, mit: false, order: Date.now()
+    subtasks: [], links: [], repeat: null, mit: false, order: Date.now(),
+    srs: null, srsId: null,           // srs: {stage:0..4}; srsId links a learning item to its revisions
+    srsAsked: false,                  // user already decided about revision for this task — don't ask again
+    startTime: null                   // "HH:MM" time block, e.g. "14:30"
   }, p);
 }
-const tasksOf = f => db.tasks.filter(f).sort((a, b) => (b.mit - a.mit) || (a.order - b.order));
+const tierRank = t => t.priority === 0 ? 1.5 : t.priority; // unsorted sits between Must and Should
+const tasksOf = f => db.tasks.filter(f).sort((a, b) => (b.mit - a.mit) || (tierRank(a) - tierRank(b)) || (a.order - b.order));
 const openTasks = () => db.tasks.filter(t => !t.done);
 const isInbox = t => !t.done && !t.due && !t.someday;
 const isToday = t => !t.done && t.due && daysDiff(t.due) <= 0;
@@ -728,9 +785,13 @@ function parseCapture(raw) {
   const t = newTask({});
   const eat = (re, fn) => { text = text.replace(re, m => { fn(m); return " "; }); };
 
-  eat(/ !(?:1|high|h) /i, () => t.priority = 1);
-  eat(/ !(?:2|med|medium|m) /i, () => t.priority = 2);
-  eat(/ !(?:3|low|l) /i, () => t.priority = 3);
+  // URLs first — before tokens like ! ~ # get eaten out of them
+  let um;
+  while ((um = text.match(/\s(https?:\/\/[^\s]+)(?=\s)/i))) { t.links.push(um[1]); text = text.replace(um[1], " "); }
+
+  eat(/ !(?:1|high|h|must) /i, () => t.priority = 1);
+  eat(/ !(?:2|med|medium|m|should) /i, () => t.priority = 2);
+  eat(/ !(?:3|low|l|want) /i, () => t.priority = 3);
   eat(/ ~(\d+(?:\.\d+)?)(h|hr|hrs|hours?) /i, m => t.est = Math.round(parseFloat(m.match(/[\d.]+/)[0]) * 60));
   eat(/ ~(\d+)(m|min|mins)? /i, m => t.est = parseInt(m.match(/\d+/)[0]));
   eat(/ #([\w-]+) /i, m => t.project = m.trim().slice(1));
@@ -744,11 +805,16 @@ function parseCapture(raw) {
   eat(/ next week /i, () => t.due = addDays(todayStr(), 7));
   eat(/ (?:this )?weekend /i, () => t.due = nextWeekday(6));
   eat(/ someday /i, () => t.someday = true);
+  eat(/ \*(learn|rev|revise|srs) /i, () => t.srs = { stage: 0 });
   WEEKDAYS.forEach((w, i) => { eat(new RegExp(" (?:on |next )?" + w + " ", "i"), () => { if (!t.due) t.due = nextWeekday(i); }); });
   eat(/ in (\d+) days? /i, m => t.due = addDays(todayStr(), parseInt(m.match(/\d+/)[0])));
   eat(/ (\d{4}-\d{2}-\d{2}) /, m => t.due = m.trim());
+  eat(/ @(\d{1,2}):(\d{2})\s*([ap]m)?/i, m => { const p = m.match(/@(\d{1,2}):(\d{2})\s*([ap]m)?/i); let h = +p[1]; if (p[3] && /pm/i.test(p[3]) && h < 12) h += 12; if (p[3] && /am/i.test(p[3]) && h === 12) h = 0; t.startTime = String(h).padStart(2, "0") + ":" + p[2]; });
+  eat(/ @(\d{1,2})\s*([ap]m)/i, m => { const p = m.match(/@(\d{1,2})\s*([ap]m)/i); let h = +p[1]; if (/pm/i.test(p[2]) && h < 12) h += 12; if (/am/i.test(p[2]) && h === 12) h = 0; t.startTime = String(h).padStart(2, "0") + ":00"; });
+  eat(/ @(\d{2}):(\d{2}) /, m => { const p = m.match(/@(\d{2}):(\d{2})/); t.startTime = p[1] + ":" + p[2]; });
 
   t.title = text.replace(/\s+/g, " ").trim();
+  if (t.srs) { t.srsId = t.id; if (!t.due) t.due = todayStr(); }
   if (t.repeat && !t.due) t.due = todayStr();
   if (t.project && !db.projects.find(p => p.name.toLowerCase() === t.project.toLowerCase())) {
     db.projects.push({ id: uid(), name: t.project, color: projColor(db.projects.length) });
@@ -845,14 +911,24 @@ async function refreshCalendar(force = false) {
 const remStatus = { ok: false, at: 0, count: 0, error: null };
 let remT = null, remBusy = false;
 function scheduleRemSync() { if (!db.settings.reminders.enabled) return; clearTimeout(remT); remT = setTimeout(() => syncReminders(), 45000); }
+const REM_LEASE_KEY = "stride.remSyncLease", REM_LEASE_MS = 60000;
+function acquireRemLease() {
+  const now = Date.now();
+  const held = Number(localStorage.getItem(REM_LEASE_KEY) || 0);
+  if (held && now - held < REM_LEASE_MS) return false;   // another tab/instance is mid-sync
+  localStorage.setItem(REM_LEASE_KEY, String(now));
+  return true;
+}
+function releaseRemLease() { localStorage.removeItem(REM_LEASE_KEY); }
 async function syncReminders(quiet = true) {
   if (!db.settings.reminders.enabled || remBusy) return;
+  if (!acquireRemLease()) return;                        // another tab is already syncing — avoid a redundant concurrent call
   remBusy = true;
   try {
     const horizon = addDays(todayStr(), 7);
     const tasks = db.tasks
       .filter(t => !t.done && t.due && t.due <= horizon && t.title)
-      .map(t => ({ id: t.id, title: t.title.slice(0, 100), due: t.due, offset: Math.max(0, daysDiff(t.due)) }));
+      .map(t => ({ id: t.id, title: t.title.slice(0, 100), due: t.due, offset: Math.max(0, daysDiff(t.due)), startTime: t.startTime || null }));
     const r = await fetch(HELPER + "/reminders/sync", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ tasks })
@@ -870,7 +946,7 @@ async function syncReminders(quiet = true) {
   } catch (e) {
     remStatus.ok = false; remStatus.error = e.message;
     if (!quiet) toast("Reminders sync failed: " + String(e.message).slice(0, 90));
-  } finally { remBusy = false; }
+  } finally { remBusy = false; releaseRemLease(); }
 }
 
 /* ---------- Mac activity awareness ---------- */
@@ -918,7 +994,7 @@ const evRow = e => `<div class="cal-ev"><span class="cal-time">${e.time || "all-
 function score(t) {
   let s = 0;
   if (t.due) { const n = daysDiff(t.due); s += n < 0 ? 90 + Math.min(30, -n * 3) : n === 0 ? 80 : Math.max(0, 40 - n * 5); }
-  s += [0, 45, 25, 8][t.priority] || 0;
+  s += [0, 60, 25, 6][t.priority] || 0;
   if (t.est && t.est <= 30) s += 6;                          // quick wins
   if (t.mit) s += 20;
   s += Math.min(12, (Date.now() - t.createdAt) / DAY / 2);   // aging
@@ -946,13 +1022,15 @@ const VIEWS = {
   upcoming:{ label: "Upcoming",  icon: "M8 2v4M16 2v4M3 9h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z", count: () => db.tasks.filter(isUpcoming).length },
   week:    { label: "This Week", icon: "M3 5h18M3 12h18M3 19h12", count: () => db.tasks.filter(isWeek).length },
   someday: { label: "Someday",   icon: "M12 3a9 9 0 109 9 9 9 0 00-9-9zM12 8v4l3 2", count: () => db.tasks.filter(t => !t.done && t.someday).length },
+  all:     { label: "All Tasks", icon: "M4 6h16M4 12h16M4 18h10", count: () => { const seen = new Set(); return db.tasks.filter(t => { if (t.done || (t.srs && t.srs.stage > 0)) return false; const k = t.repeat ? t.title : t.id; if (seen.has(k)) return false; seen.add(k); return true; }).length; } },
   projects:{ label: "Projects",  icon: "M3 7l9-4 9 4-9 4-9-4zM3 12l9 4 9-4M3 17l9 4 9-4", count: () => 0 },
   habits:  { label: "Habits",    icon: "M4 19c3-1 4-4 4-7 0 3 1 6 4 7-3 1-4 4-4 7 0-3-1-6-4-7zM15 5c2-.6 2.5-2 2.5-3.5 0 1.5.5 2.9 2.5 3.5-2 .6-2.5 2-2.5 3.5C17.5 7 17 5.6 15 5z", count: () => 0 },
+  revise:  { label: "Revise",    icon: "M4 4v6h6M20 9A8 8 0 006 5.3L4 10M4 15a8 8 0 0014 3.7l1.6-3.7", count: () => db.tasks.filter(t => !t.done && t.srs && t.srs.stage > 0 && t.due && daysDiff(t.due) <= 0).length + db.decks.reduce((s, d) => s + deckDueCards(d).length, 0) },
   review:  { label: "Review",    icon: "M3 17l5-5 4 4 8-8M21 8v4h-4", count: () => 0 },
   coach:   { label: "Assistant", icon: "M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3zM18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2", count: () => 0 }
 };
-const MAIN_VIEWS = ["inbox", "today", "upcoming", "week", "someday"];
-const SPACE_VIEWS = ["projects", "habits", "review", "coach"];
+const MAIN_VIEWS = ["inbox", "today", "upcoming", "week", "someday", "all"];
+const SPACE_VIEWS = ["projects", "habits", "revise", "review", "coach"];
 
 /* ---------- rendering: nav ---------- */
 const icon = (d, s = 16) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
@@ -976,10 +1054,12 @@ function taskRow(t, opts = {}) {
   const overdue = t.due && daysDiff(t.due) < 0 && !t.done;
   const chips = [
     t.due && !opts.hideDue ? `<span class="chip due ${overdue ? "overdue" : ""}">${fmtDue(t.due)}</span>` : "",
-    t.priority === 1 ? `<span class="chip p1">High</span>` : t.priority === 2 ? `<span class="chip p2">Med</span>` : "",
+    t.startTime ? `<span class="chip">${fmtTime(t.startTime)}</span>` : "",
+    t.priority === 1 ? `<span class="chip p1">Must</span>` : t.priority === 2 ? `<span class="chip p2">Should</span>` : t.priority === 3 ? `<span class="chip p3">Want</span>` : "",
     t.est ? `<span class="chip">${fmtMin(t.est)}</span>` : "",
     proj ? `<span class="chip" style="color:${proj.color}">${esc(proj.name)}</span>` : "",
     t.repeat ? `<span class="chip rec">↻ ${t.repeat}</span>` : "",
+    t.srs ? `<span class="chip srs">${t.srs.stage ? `✎ rev ${t.srs.stage}/${SRS_PLAN.length + 1}` : "✎ learn"}</span>` : "",
     t.subtasks.length ? `<span class="task-progress">${subsDone}/${t.subtasks.length}</span>` : "",
     t.notes || t.links.length ? `<span class="task-progress">≡</span>` : ""
   ].filter(Boolean).join("");
@@ -999,6 +1079,7 @@ function taskRow(t, opts = {}) {
       ${chips ? `<div class="task-meta">${chips}</div>` : ""}${triage}
     </div>
     <div class="task-side">
+      ${t.done && !t.srs ? `<button class="icon-btn" data-act="startsrs" title="Add to revision list (spaced, every 2 days)">✎</button>` : ""}
       ${!t.done && !isToday(t) ? `<button class="icon-btn" data-act="due" data-v="0" title="Do today">☀</button>` : ""}
       ${!t.done ? `<button class="icon-btn" data-act="due" data-v="1" title="Push to tomorrow">→</button>` : ""}
       <span class="icon-btn drag-handle" title="Drag to reorder">⋮⋮</span>
@@ -1027,6 +1108,19 @@ function ringSVG(pct, done, total) {
   </svg>`;
 }
 const loadMeta = list => { const m = list.reduce((s, t) => s + (t.est || 0), 0); return m ? "~" + fmtMin(m) : ""; };
+const groupCollapsed = (title, meta, inner) =>
+  `<details class="group-collapsed"><summary><span class="group-title">${title}</span>${meta ? `<span class="group-meta">${meta}</span>` : ""}</summary>${inner}</details>`;
+// Must/Should/Want tiers, banded by loudness — Want stays folded so it doesn't clutter the space.
+function tierBands(list, opts = {}) {
+  const must = list.filter(t => t.priority === 1);
+  const should = list.filter(t => t.priority === 2 || t.priority === 0);
+  const want = list.filter(t => t.priority === 3);
+  let html = "";
+  if (must.length) html += group("Must do", loadMeta(must), must.map(t => taskRow(t, opts)).join(""));
+  if (should.length) html += group("Should do", loadMeta(should), should.map(t => taskRow(t, opts)).join(""));
+  if (want.length) html += groupCollapsed("Want to do", want.length, want.map(t => taskRow(t, opts)).join(""));
+  return html;
+}
 
 /* ---------- rendering: views ---------- */
 function render() {
@@ -1042,8 +1136,8 @@ function render() {
   } else ring.innerHTML = "";
   $("#content").innerHTML = state.search ? renderSearch() : ({
     inbox: renderInbox, today: renderToday, upcoming: renderUpcoming, week: renderWeek,
-    someday: renderSomeday, projects: renderProjects, habits: renderHabits, review: renderReview,
-    coach: renderCoach
+    someday: renderSomeday, all: renderAll, projects: renderProjects, habits: renderHabits, review: renderReview,
+    coach: renderCoach, revise: renderRevise
   }[state.view])();
   renderDetail();
 }
@@ -1055,6 +1149,7 @@ function subFor(view) {
   }
   if (view === "inbox") return "Capture now, organize later";
   if (view === "someday") return "Ideas waiting for their moment";
+  if (view === "all") { const c = VIEWS.all.count(); return c + " unique task" + (c !== 1 ? "s" : ""); }
   return "";
 }
 function detectRisks() {
@@ -1093,9 +1188,12 @@ function renderToday() {
     html += `<div class="banner ok">✓ Today's plan is complete. Rest is productive too — see you tomorrow.</div>`;
   }
   if (overdue.length) html += group("Overdue", loadMeta(overdue), overdue.map(t => taskRow(t)).join(""));
-  const mits = today.filter(t => t.mit), rest = today.filter(t => !t.mit);
+  const revisions = today.filter(t => t.srs && t.srs.stage > 0);
+  const plain = today.filter(t => !(t.srs && t.srs.stage > 0));
+  const mits = plain.filter(t => t.mit), rest = plain.filter(t => !t.mit);
   if (mits.length) html += group("Most important", "", mits.map(t => taskRow(t, { hideDue: true })).join(""));
-  if (rest.length) html += group(mits.length ? "Also today" : "Today", loadMeta(rest), rest.map(t => taskRow(t, { hideDue: true })).join(""));
+  html += tierBands(rest, { hideDue: true });
+  if (revisions.length) html += group("Revisions", loadMeta(revisions), revisions.map(t => taskRow(t, { hideDue: true })).join(""));
   if (!overdue.length && !today.length && !doneToday.length)
     html += emptyState("☀", "Your day is a blank page", "Add one meaningful task above — or press P and let Stride suggest your top three.");
   if (doneToday.length) html += group("Done", doneToday.length + " completed", doneToday.map(t => taskRow(t, { hideDue: true })).join(""));
@@ -1104,7 +1202,7 @@ function renderToday() {
 function renderInbox() {
   const list = tasksOf(isInbox);
   if (!list.length) return emptyState("◎", "Inbox zero — nicely done", "Whenever something's on your mind, type it above and move on. Sort it here later.");
-  return group("To triage", list.length + " item" + (list.length > 1 ? "s" : ""), list.map(t => taskRow(t, { triage: true })).join(""));
+  return tierBands(list, { triage: true });
 }
 function renderUpcoming() {
   let html = "";
@@ -1124,14 +1222,93 @@ function renderUpcoming() {
 }
 function renderWeek() {
   const list = tasksOf(isWeek);
-  const load = list.reduce((s, t) => s + (t.est || 30), 0);
   if (!list.length) return emptyState("▢", "Week is clear", "Tasks due through Sunday show up here.");
-  return group("Rest of this week", "~" + fmtMin(load), list.map(t => taskRow(t)).join(""));
+  const revisions = list.filter(t => t.srs && t.srs.stage > 0);
+  const plain = list.filter(t => !(t.srs && t.srs.stage > 0));
+  let html = "";
+  if (plain.length) html += group("Rest of this week", loadMeta(plain), plain.map(t => taskRow(t)).join(""));
+  if (revisions.length) html += group("Revisions", loadMeta(revisions), revisions.map(t => taskRow(t)).join(""));
+  return html;
 }
 function renderSomeday() {
   const list = tasksOf(t => !t.done && t.someday);
   if (!list.length) return emptyState("✧", "No someday items", "Park ideas here guilt-free. Add “someday” to any capture.");
   return group("Someday / maybe", list.length + "", list.map(t => taskRow(t, { triage: true })).join(""));
+}
+function renderAll() {
+  // Deduplicate: for recurring tasks, keep only the earliest open instance per title
+  const seen = new Set();
+  const unique = db.tasks.filter(t => {
+    if (t.done || (t.srs && t.srs.stage > 0)) return false;
+    const k = t.repeat ? t.title : t.id;
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  }).sort((a, b) => (b.mit - a.mit) || (a.order - b.order));
+  if (!unique.length) return emptyState("≡", "No tasks yet", "Add a task above to get started.");
+  const scheduled = unique.filter(t => t.due && !t.someday);
+  const someday = unique.filter(t => t.someday);
+  const inbox = unique.filter(t => !t.due && !t.someday);
+  let html = "";
+  if (scheduled.length) html += group("Scheduled", scheduled.length + "", scheduled.sort((a, b) => (a.due || "").localeCompare(b.due || "")).map(t => taskRow(t)).join(""));
+  if (someday.length) html += group("Someday", someday.length + "", someday.map(t => taskRow(t)).join(""));
+  if (inbox.length) html += group("Inbox", inbox.length + "", inbox.map(t => taskRow(t, { triage: true })).join(""));
+  return html;
+}
+function renderRevise() {
+  const readBtn = `<button class="capture" id="readBtn" style="width:100%;text-align:left;margin-bottom:16px;cursor:pointer">
+    <span style="color:var(--accent-text);font-weight:600">✎ I read something today</span>
+    <span style="color:var(--faint);font-size:13px">— paste it, get a revision note + flashcards + schedule</span>
+  </button>`;
+  // learning pipeline: one row per lineage with progress + count
+  const lineages = {};
+  db.tasks.filter(t => t.srs).forEach(t => { const k = t.srsId || t.id; (lineages[k] = lineages[k] || []).push(t); });
+  const findDeck = list => db.decks.find(d => list.some(t => t.id === d.taskId));         // pipeline -> deck
+  const findLineage = deck => Object.values(lineages).find(list => list.some(t => t.id === deck.taskId)); // deck -> pipeline
+
+  let deckHtml = "";
+  if (db.decks.length) {
+    const totalDue = db.decks.reduce((s, d) => s + deckDueCards(d).length, 0);
+    deckHtml += group("Flashcard decks", totalDue ? totalDue + " cards due" : "all reviewed", db.decks.map(d => {
+      const due = deckDueCards(d).length;
+      const open = findLineage(d)?.find(t => !t.done);
+      return `<div class="srs-row deck-row" data-deckrow="${d.id}">
+        <span class="chip srs">${due ? due + " due" : "✓"}</span>
+        <span class="srs-title">${esc(d.title)}</span>
+        <span class="srs-meta">${d.cards.length} cards${open ? ` · next revisit ${fmtDue(open.due)}` : ""}</span>
+        <button class="pill-btn" data-deckact="review">Review</button>
+        <button class="icon-btn" data-deckact="improve" title="Improve deck with AI">✦</button>
+        <button class="icon-btn" data-deckact="del" title="Delete deck">✕</button>
+      </div>`;
+    }).join(""));
+  }
+  let pipelineHtml = "";
+  const dueNow = tasksOf(t => !t.done && t.srs && t.due && daysDiff(t.due) <= 0);
+  const upcoming = tasksOf(t => !t.done && t.srs && t.due && daysDiff(t.due) > 0);
+  if (dueNow.length) pipelineHtml += group("Due for revision", "~" + fmtMin(dueNow.reduce((s, t) => s + (t.est || 15), 0)), dueNow.map(t => taskRow(t)).join(""));
+  const rows = Object.values(lineages).map(list => {
+    list.sort((a, b) => (a.srs.stage - b.srs.stage));
+    const doneCount = list.filter(t => t.done).length;
+    const totalStages = SRS_PLAN.length + 1;                 // learn + 3 revisions, each ~2 days after the last is completed
+    const open = list.find(t => !t.done);
+    const finished = !open && list.some(t => t.done && t.srs.stage === SRS_PLAN.length);
+    return { title: list[list.length - 1].title, doneCount, totalStages, open, finished, deck: findDeck(list) };
+  }).sort((a, b) => (a.finished - b.finished) || ((a.open && a.open.due) < (b.open && b.open.due) ? -1 : 1));
+  if (rows.length) {
+    pipelineHtml += group("Learning pipeline", rows.length + " topic" + (rows.length > 1 ? "s" : ""), rows.map(r => `
+      <div class="srs-row ${r.finished ? "fin" : ""}">
+        <span class="srs-dots">${[...Array(r.totalStages)].map((_, i) => `<i class="${i < r.doneCount ? "on" : ""}"></i>`).join("")}</span>
+        <span class="srs-title">${esc(r.title)}</span>
+        <span class="srs-meta">${r.finished ? "✓ in long-term memory" : r.open ? `${r.doneCount}/${r.totalStages} · next ${r.open.due ? fmtDue(r.open.due) : "—"}` : `${r.doneCount}/${r.totalStages}`}</span>
+        ${r.deck ? `<span class="chip srs" data-deckrow="${r.deck.id}" data-deckact="review" style="cursor:pointer" title="Review this topic's flashcards">🗂 ${deckDueCards(r.deck).length || r.deck.cards.length}</span>` : ""}
+      </div>`).join(""));
+  }
+  if (upcoming.length) pipelineHtml += group("Scheduled revisions", "", upcoming.map(t => taskRow(t)).join(""));
+  let html = "";
+  if (deckHtml) html += `<div class="zone-label">Flashcards</div>` + deckHtml;
+  if (pipelineHtml) html += `<div class="zone-label">Spaced revisits</div>` + pipelineHtml;
+  if (!html) html = emptyState("✎", "Nothing in revision yet",
+    "We forget most of what we learn within days. Paste today's reading above, or add “*learn” to any task — Stride re-surfaces it every 2 days for 3 rounds of review, with AI flashcards from links, notes, or PDFs.");
+  return readBtn + html;
 }
 function renderSearch() {
   const q = state.search.toLowerCase();
@@ -1186,8 +1363,26 @@ document.addEventListener("drop", e => {
 function findTask(id) { return db.tasks.find(t => t.id === id); }
 function completeTask(t) {
   t.done = true; t.doneAt = Date.now(); t.mit = false;
+  if (t.srs && t.srs.stage < SRS_PLAN.length) {
+    // each revision is scheduled from the day this stage was actually completed (today),
+    // not from the original learning day — so a late review pushes the rest of the chain back too.
+    const origin = t.srs.origin || todayStr();
+    const nextDue = addDays(todayStr(), SRS_PLAN[t.srs.stage]);
+    const srsId = t.srsId || t.id, nextStage = t.srs.stage + 1;
+    // completing the same stage twice (e.g. uncheck then recheck) must not spawn a second sibling clone
+    if (!db.tasks.some(x => x !== t && x.srsId === srsId && x.srs && x.srs.stage === nextStage)) {
+      db.tasks.push(newTask({
+        title: t.title, notes: t.notes, project: t.project,
+        est: Math.max(10, Math.round((t.est || 20) / 2)),
+        due: nextDue, srs: { stage: nextStage, origin }, srsId
+      }));
+      toast(`Revision ${nextStage}/${SRS_PLAN.length} scheduled · ${fmtDue(nextDue)}`);
+    }
+  } else if (t.srs && t.srs.stage === SRS_PLAN.length) {
+    celebrate(); toast(`All ${SRS_PLAN.length} revisions done — this one's in long-term memory ✦`);
+  }
   if (t.repeat) {
-    const nxt = newTask({ title: t.title, notes: t.notes, priority: t.priority, est: t.est, project: t.project, repeat: t.repeat, subtasks: t.subtasks.map(s => ({ ...s, done: false })), due: nextOccurrence(t) });
+    const nxt = newTask({ title: t.title, notes: t.notes, priority: t.priority, est: t.est, project: t.project, repeat: t.repeat, subtasks: t.subtasks.map(s => ({ ...s, done: false })), due: nextOccurrence(t), links: [...t.links], startTime: t.startTime });
     t.repeat = null; db.tasks.push(nxt);
   }
   maybeCelebrate();
@@ -1199,6 +1394,15 @@ function setDue(t, v) {
 document.addEventListener("click", e => {
   const nav = e.target.closest("[data-view]");
   if (nav) { state.view = nav.dataset.view; state.search = ""; state.selected = null; render(); return; }
+  const da = e.target.closest("[data-deckact]");
+  if (da) {
+    const deck = db.decks.find(d => d.id === da.closest("[data-deckrow]").dataset.deckrow);
+    if (!deck) return;
+    if (da.dataset.deckact === "review") startCards(deck.id);
+    else if (da.dataset.deckact === "improve") improveDeck(deck, da);
+    else if (da.dataset.deckact === "del" && confirm(`Delete deck “${deck.title}”?`)) { db.decks = db.decks.filter(d => d !== deck); save(); render(); }
+    return;
+  }
   const ab = e.target.closest("[data-ab]");
   if (ab) {
     const s = abandonedSessions()[+ab.dataset.abi];
@@ -1228,9 +1432,31 @@ document.addEventListener("click", e => {
     if (act) {
       e.stopPropagation();
       const a = act.dataset.act;
-      if (a === "toggle") { t.done ? (t.done = false, t.doneAt = null) : completeTask(t); }
+      if (a === "toggle") {
+        if (t.done) {
+          t.done = false; t.doneAt = null; t.srsAsked = false;
+          // undo side-effects of completeTask: remove spawned clone and restore repeat
+          const cloneIdx = db.tasks.findIndex(x => !x.done && x !== t && x.title === t.title && x.repeat && !t.repeat);
+          if (cloneIdx !== -1) {
+            t.repeat = db.tasks[cloneIdx].repeat;  // restore repeat from the clone
+            db.tasks.splice(cloneIdx, 1);           // remove the orphan clone
+          }
+          // remove any SRS revision tasks that were spawned for this completion
+          const srsId = t.srsId || t.id;
+          db.tasks = db.tasks.filter(x => !(x !== t && !x.done && x.srs && x.srsId === srsId && x.srs.stage === (t.srs ? t.srs.stage + 1 : 1)));
+          t.srs = null;
+        }
+        else {
+          completeTask(t);
+          maybeOfferRevision(t);
+        }
+      }
       else if (a === "due") setDue(t, act.dataset.v);
       else if (a === "someday") { t.someday = true; t.due = null; }
+      else if (a === "startsrs") {
+        startRevision(t); markAsked(t);
+        toast(`Added to revision list — first review ${fmtDue(addDays(todayStr(), 1))}`);
+      }
       save(); render(); return;
     }
     state.selected = state.selected === t.id ? null : t.id;
@@ -1256,17 +1482,24 @@ function renderDetail() {
     <textarea class="detail-title" id="dTitle" rows="2" aria-label="Task title">${esc(t.title)}</textarea>
     <div class="detail-grid">
       <div class="detail-row"><label>Due</label><input type="date" id="dDue" value="${t.due || ""}"></div>
+      <div class="detail-row"><label>Time</label><input type="time" id="dTime" value="${t.startTime || ""}"></div>
       <div class="detail-row"><label>Estimate</label>
         <select id="dEst">${[0, 15, 30, 45, 60, 90, 120, 180, 240].map(m => `<option value="${m}" ${t.est === m ? "selected" : ""}>${m ? fmtMin(m) : "—"}</option>`).join("")}</select></div>
     </div>
     <div class="detail-row"><label>Priority</label>
-      <div class="seg" id="dPrio">${["None", "High", "Med", "Low"].map((l, i) => `<button data-p="${i}" class="${t.priority === i ? "on p" + i : ""}">${l}</button>`).join("")}</div>
+      <div class="seg" id="dPrio">${["—", "Must", "Should", "Want"].map((l, i) => `<button data-p="${i}" class="${t.priority === i ? "on p" + i : ""}">${l}</button>`).join("")}</div>
     </div>
     <div class="detail-grid">
       <div class="detail-row"><label>Project</label>
         <select id="dProj"><option value="">—</option>${db.projects.map(p => `<option ${proj === p.name ? "selected" : ""}>${esc(p.name)}</option>`).join("")}<option value="__new">+ New project…</option></select></div>
       <div class="detail-row"><label>Repeat</label>
         <select id="dRep">${["", "daily", "weekdays", "weekly", "monthly"].map(r => `<option value="${r}" ${t.repeat === r || (!t.repeat && !r) ? "selected" : ""}>${r || "—"}</option>`).join("")}</select></div>
+    </div>
+    <div class="detail-row"><label>Spaced review · every 2 days</label>
+      <div class="seg" id="dSrs">
+        <button data-srs="off" class="${!t.srs ? "on" : ""}">Off</button>
+        <button data-srs="on" class="${t.srs ? "on" : ""}">${t.srs && t.srs.stage ? `Review ${t.srs.stage}/${SRS_PLAN.length + 1}` : "On"}</button>
+      </div>
     </div>
     <div class="detail-row"><label>Subtasks</label>
       <div id="dSubs">${t.subtasks.map((s, i) => `
@@ -1281,8 +1514,9 @@ function renderDetail() {
     </div>
     <div class="detail-row"><label>Notes</label><textarea id="dNotes" placeholder="Add details…">${esc(t.notes)}</textarea></div>
     <div class="detail-row"><label>Links</label>
-      <div class="link-list">${t.links.map((l, i) => `<span class="link-item"><a href="${esc(l)}" target="_blank" rel="noopener">${esc(l)}</a><button class="rm" data-lrm="${i}">✕</button></span>`).join("")}</div>
+      <div class="link-list" id="dLinks">${t.links.map((l, i) => `<span class="link-item"><a href="${esc(l)}" target="_blank" rel="noopener">${esc(l)}</a><button class="rm" data-lrm="${i}">✕</button></span>`).join("")}</div>
       <button class="add-sub" id="dAddLink">＋ Attach link</button>
+      ${aiReady() ? `<button class="add-sub" id="dGenCards" style="color:var(--accent-text)">✦ Make flashcards — link · notes · PDF · paste</button>` : ""}
     </div>
   </div>
   <div class="detail-foot">
@@ -1294,6 +1528,7 @@ function renderDetail() {
   const commit = fn => { fn(); save(); render(); };
   $("#dTitle").addEventListener("change", e => commit(() => t.title = e.target.value.trim()));
   $("#dDue").addEventListener("change", e => commit(() => { t.due = e.target.value || null; if (t.due) t.someday = false; }));
+  $("#dTime").addEventListener("change", e => commit(() => t.startTime = e.target.value || null));
   $("#dEst").addEventListener("change", e => commit(() => t.est = +e.target.value));
   $("#dRep").addEventListener("change", e => commit(() => { t.repeat = e.target.value || null; if (t.repeat && !t.due) t.due = todayStr(); }));
   $("#dProj").addEventListener("change", e => {
@@ -1303,6 +1538,10 @@ function renderDetail() {
     save(); render();
   });
   $("#dPrio").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b) commit(() => t.priority = +b.dataset.p); });
+  $("#dSrs").addEventListener("click", e => {
+    const b = e.target.closest("[data-srs]"); if (!b) return;
+    commit(() => { if (b.dataset.srs === "on") { t.srs = t.srs || { stage: 0 }; t.srsId = t.srsId || t.id; if (!t.due) t.due = todayStr(); } else t.srs = null; });
+  });
   $("#dSubs").addEventListener("click", e => {
     const tg = e.target.closest("[data-sub]"), rm = e.target.closest("[data-subrm]");
     if (tg) commit(() => t.subtasks[+tg.dataset.sub].done = !t.subtasks[+tg.dataset.sub].done);
@@ -1318,7 +1557,9 @@ function renderDetail() {
     } else { breakDown(t); toast("Suggested steps added — edit freely"); }
     save(); render();
   });
+  $("#dLinks")?.addEventListener("click", e => { const rm = e.target.closest("[data-lrm]"); if (rm) commit(() => t.links.splice(+rm.dataset.lrm, 1)); });
   $("#dAddLink").addEventListener("click", () => { const u = prompt("Paste a URL"); if (u && u.trim()) commit(() => t.links.push(u.trim())); });
+  $("#dGenCards")?.addEventListener("click", () => openDeckChooser(t));
   $("#dClose").addEventListener("click", () => { state.selected = null; render(); });
   $("#dFocus")?.addEventListener("click", () => startFocus(t.id));
   $("#dDelete").addEventListener("click", () => {
@@ -1342,7 +1583,11 @@ $("#captureInput").addEventListener("keydown", e => {
   if (state.view === "someday" && !t.due) t.someday = true;
   if (state.view === "week" && !t.due && !t.someday) t.due = todayStr();
   db.tasks.push(t); save(); e.target.value = ""; render();
-  toast(t.due ? `Added · ${fmtDue(t.due)}` : t.someday ? "Added to Someday" : "Captured to Inbox");
+  if (t.links.length && t.srs && aiReady()) {
+    toast("Learning link detected ✦", "Make flashcards", () => { const x = findTask(t.id); if (x) (x.links.length > 1 ? openDeckChooser(x) : generateDeck(x, x.links[0])); });
+  } else {
+    toast(t.due ? `Added · ${fmtDue(t.due)}` : t.someday ? "Added to Someday" : "Captured to Inbox");
+  }
 });
 
 /* ---------- habits ---------- */
@@ -1372,6 +1617,7 @@ function habitStreak(h) {
   return n;
 }
 document.addEventListener("click", e => {
+  if (e.target.closest("#readBtn")) { openReadCapture(); return; }
   if (e.target.closest("#addHabit")) {
     const n = prompt("Habit name (e.g. Read 20 min)"); if (n && n.trim()) { db.habits.push({ id: uid(), name: n.trim(), log: [] }); save(); render(); }
     return;
@@ -1475,7 +1721,7 @@ function renderFocus() {
       <button class="pill-btn ghost" id="fLater">→ Tomorrow</button>
     </div>`;
   $("#fExit").onclick = exitFocus;
-  $("#fDone").onclick = () => { const t2 = findTask(focus.taskId); logFocus(); completeTask(t2); save(); nextFocus(); };
+  $("#fDone").onclick = () => { const t2 = findTask(focus.taskId); logFocus(); completeTask(t2); maybeOfferRevision(t2); save(); nextFocus(); };
   $("#fSkip").onclick = () => { logFocus(); nextFocus(focus.taskId); };
   $("#fLater").onclick = () => { const t2 = findTask(focus.taskId); logFocus(); setDue(t2, "1"); t2.mit = false; save(); nextFocus(focus.taskId); };
   $("#focusScreen").querySelectorAll("[data-fsub]").forEach(b => b.onclick = () => {
@@ -1504,7 +1750,7 @@ $("#focusBtn").addEventListener("click", () => startFocus());
 /* ---------- plan my day ---------- */
 function whyText(t) {
   if (t.due && daysDiff(t.due) < 0) return "Overdue — clear it first";
-  if (t.priority === 1) return "High priority" + (t.due && daysDiff(t.due) === 0 ? ", due today" : "");
+  if (t.priority === 1) return "Must do" + (t.due && daysDiff(t.due) === 0 ? ", due today" : "");
   if (t.due && daysDiff(t.due) === 0) return "Due today";
   if (t.est && t.est <= 30) return "Quick win — builds momentum";
   return "Been waiting a while";
@@ -1583,6 +1829,8 @@ const COMMANDS = [
   { label: "Go to Someday", k: "5", run: () => go("someday") }, { label: "Go to Projects", k: "6", run: () => go("projects") },
   { label: "Go to Habits", k: "7", run: () => go("habits") }, { label: "Go to Review", k: "8", run: () => go("review") },
   { label: "Go to Assistant", k: "9", run: () => go("coach") },
+  { label: "Go to Revise (spaced repetition)", k: "0", run: () => go("revise") },
+  { label: "I read something today — paste → revision plan", run: () => { closePalette(); openReadCapture(); } },
   { label: "Analyze my habits & workload (AI)", run: () => { go("coach"); setTimeout(() => { const b = $("#aiAnalyzeBtn"); b ? runAnalysis(b) : toast("Connect an AI provider first"); }, 60); } },
   { label: "Plan my day", k: "P", run: () => { closePalette(); openPlan(); } },
   { label: "Start Focus mode", k: "F", run: () => { closePalette(); startFocus(); } },
@@ -1631,9 +1879,16 @@ $("#paletteOverlay").addEventListener("click", e => { if (e.target === e.current
 document.addEventListener("keydown", e => {
   const inField = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
   if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); openPalette(); return; }
+  if (cardSess && $("#cardScreen").classList.contains("show") && e.key !== "Escape") {
+    if (e.key === " ") { e.preventDefault(); if (!cardSess.flipped) { cardSess.flipped = true; renderCards(); } return; }
+    if (cardSess.flipped && e.key === "1") { e.preventDefault(); answerCard(false); return; }
+    if (cardSess.flipped && e.key === "2") { e.preventDefault(); answerCard(true); return; }
+    return;
+  }
   if (e.key === "Escape") {
     if ($("#paletteOverlay").classList.contains("show")) return closePalette();
     if ($("#modalOverlay").classList.contains("show")) return closeModal();
+    if ($("#cardScreen").classList.contains("show")) return exitCards();
     if ($("#focusScreen").classList.contains("show")) return exitFocus();
     if (state.selected) { state.selected = null; render(); return; }
     if (state.search) { state.search = ""; render(); return; }
@@ -1647,7 +1902,7 @@ document.addEventListener("keydown", e => {
     f: () => startFocus(), p: openPlan, t: cycleTheme, "?": openHelp,
     1: () => go("inbox") || 0, 2: () => go("today"), 3: () => go("upcoming"), 4: () => go("week"),
     5: () => go("someday"), 6: () => go("projects"), 7: () => go("habits"), 8: () => go("review"),
-    9: () => go("coach"),
+    9: () => go("coach"), 0: () => go("revise"),
   };
   // remap: 1=today feels more natural
   keys[1] = () => go("today"); keys[2] = () => go("inbox");
@@ -1685,7 +1940,10 @@ $("#themeBtn").addEventListener("click", cycleTheme);
 /* ---------- settings ---------- */
 function openSettings() {
   showModal(`
-    <div class="modal-head"><h2>Settings</h2></div>
+    <div class="modal-head" style="display:flex; align-items:center; gap:8px">
+      <h2 style="flex:1;">Settings</h2>
+      <button class="icon-btn" id="sRestartBtn" title="Restart helper server" aria-label="Restart helper server" style="width:28px;height:28px;font-size:16px;color:var(--text);margin:-4px 0;">⟳</button>
+    </div>
     <div class="modal-body">
       <div class="set-row"><div class="grow">Daily capacity<div class="sub">Used to detect overloaded days</div></div>
         <select id="sCap">${[240, 300, 360, 420, 480].map(m => `<option value="${m}" ${db.settings.capacity === m ? "selected" : ""}>${fmtMin(m)}</option>`).join("")}</select></div>
@@ -1813,6 +2071,18 @@ function openSettings() {
     catch (err) { b.textContent = "Test"; toast("Failed: " + String(err.message).slice(0, 90)); }
     finally { b.disabled = false; setTimeout(() => { if (b.isConnected) b.textContent = "Test"; }, 2500); }
   };
+  $("#sRestartBtn").onclick = async e => {
+    const b = e.target;
+    b.style.transform = "rotate(180deg)";
+    b.style.transition = "transform 0.4s var(--ease)";
+    try {
+      await fetch(HELPER + "/restart", { method: "POST" });
+      toast("Helper server restarted");
+    } catch(err) {
+      toast("Failed to restart: is the helper running?");
+    }
+    setTimeout(() => { if (b.isConnected) { b.style.transition = "none"; b.style.transform = "none"; } }, 450);
+  };
 }
 $("#settingsBtn").addEventListener("click", openSettings);
 
@@ -1821,7 +2091,8 @@ function openHelp() {
   const rows = [["N", "New task (focus capture)"], ["⌘K / Ctrl-K", "Command palette"], ["F", "Focus mode"], ["P", "Plan my day"], ["/", "Search"], ["1–9", "Switch views"], ["T", "Toggle theme"], ["Esc", "Close / back"], ["Enter on task", "Open details"]];
   showModal(`<div class="modal-head"><h2>Keyboard shortcuts</h2></div>
     <div class="modal-body">${rows.map(r => `<div class="set-row"><kbd>${r[0]}</kbd><span class="grow" style="margin-left:10px">${r[1]}</span></div>`).join("")}
-    <p style="font-size:13px;color:var(--muted);padding-top:12px">Capture syntax: <kbd>!high</kbd> <kbd>~45m</kbd> <kbd>#project</kbd> <kbd>tomorrow</kbd> <kbd>every monday</kbd> <kbd>someday</kbd></p></div>
+    <p style="font-size:13px;color:var(--muted);padding-top:12px">Capture syntax: <kbd>!must</kbd> <kbd>~45m</kbd> <kbd>#project</kbd> <kbd>tomorrow</kbd> <kbd>every monday</kbd> <kbd>someday</kbd> <kbd>*learn</kbd></p>
+    <p style="font-size:13px;color:var(--muted);padding-top:4px"><kbd>*learn</kbd> puts a task on the spaced revision cycle: finish it, and it re-surfaces every 2 days for 3 rounds so it moves into long-term memory.</p></div>
     <div class="modal-foot"><button class="pill-btn" id="mCancel">Got it</button></div>`);
   $("#mCancel").onclick = closeModal;
 }
@@ -1884,7 +2155,7 @@ const PROVIDERS = {
 const aiCfg = () => db.settings.ai;
 const aiReady = () => !!(aiCfg().key && (!aiCfg().provider.startsWith("custom") || aiCfg().baseUrl));
 
-async function callAI(system, user, maxTokens = 3000) {
+async function callAI(system, user, maxTokens = 6000) {
   const { provider, key, model, baseUrl } = aiCfg();
   const P = PROVIDERS[provider];
   const mdl = (model || P.model).trim();
@@ -1892,7 +2163,8 @@ async function callAI(system, user, maxTokens = 3000) {
   if (!mdl) throw new Error("Set a model name in Settings → AI assistant.");
   let r, j;
   if (provider === "anthropic" || provider === "custom_anthropic") {
-    const aBase = (provider === "custom_anthropic" ? baseUrl : P.base).replace(/\/+$/, "").replace(/\/v1$/, "");
+    let aBase = (provider === "custom_anthropic" ? baseUrl : P.base).replace(/\/+$/, "").replace(/\/v1$/, "");
+    if (provider === "custom_anthropic" && aBase && !/^https?:\/\//.test(aBase)) aBase = "http://" + aBase;
     r = await doFetch(aBase + "/v1/messages", {
       method: "POST",
       headers: {
@@ -1905,7 +2177,8 @@ async function callAI(system, user, maxTokens = 3000) {
     if (!r.ok) throw new Error(j.error?.message || "API error " + r.status);
     return (j.content || []).filter(c => c.type === "text" || c.text).map(c => c.text || "").join("");
   }
-  const base = (provider === "custom" ? baseUrl : P.base).replace(/\/+$/, "");
+  let base = (provider === "custom" ? baseUrl : P.base).replace(/\/+$/, "");
+  if (provider === "custom" && base && !/^https?:\/\//.test(base)) base = "http://" + base;
   r = await doFetch(base + "/chat/completions", {
     method: "POST",
     headers: {
@@ -1927,7 +2200,7 @@ async function callAI(system, user, maxTokens = 3000) {
 
 function contextSummary() {
   const open = openTasks().filter(t => !t.someday).sort((a, b) => score(b) - score(a)).slice(0, 40)
-    .map(t => `- ${t.title}${t.due ? " | due " + fmtDue(t.due) : " | no date"}${t.priority ? " | " + ["", "high", "med", "low"][t.priority] : ""}${t.est ? " | ~" + fmtMin(t.est) : ""}${t.project ? " | #" + t.project : ""}${t.subtasks.length ? ` | steps ${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}` : ""}`);
+    .map(t => `- ${t.title}${t.due ? " | due " + fmtDue(t.due) : " | no date"}${t.priority ? " | " + ["", "must", "should", "want"][t.priority] : ""}${t.est ? " | ~" + fmtMin(t.est) : ""}${t.project ? " | #" + t.project : ""}${t.subtasks.length ? ` | steps ${t.subtasks.filter(s => s.done).length}/${t.subtasks.length}` : ""}`);
   const days = [...Array(14)].map((_, i) => addDays(todayStr(), i - 13));
   const doneRow = days.map(d => db.tasks.filter(t => t.done && t.doneAt && isoDate(new Date(t.doneAt)) === d).length);
   const habits = db.habits.map(h => {
@@ -1954,6 +2227,8 @@ Daily capacity setting: ${fmtMin(db.settings.capacity)}
 Open tasks (${openTasks().length} total, top by urgency):
 ${open.join("\n") || "(none)"}
 Inbox (untriaged): ${db.tasks.filter(isInbox).length} | Someday: ${db.tasks.filter(t => !t.done && t.someday).length}
+Revision queue (spaced repetition, every 2 days): ${db.tasks.filter(t => !t.done && t.srs && t.srs.stage > 0 && t.due && daysDiff(t.due) <= 0).length} due now, ${db.tasks.filter(t => !t.done && t.srs && t.srs.stage > 0).length} scheduled
+Flashcards: ${db.decks.reduce((s, d) => s + deckDueCards(d).length, 0)} due across ${db.decks.length} deck(s)
 Completions per day, last 14 days (oldest→today): ${doneRow.join(",")}
 Habits:
 ${habits.join("\n") || "(none)"}
@@ -2059,6 +2334,334 @@ function renderReport(md) {
     return `<div class="ai-sec">${p.title ? `<div class="ai-sec-head">${secIcon(p.title)}<h4>${esc(p.title)}</h4></div>` : ""}${body}</div>`;
   }).join("");
 }
+/* ---------- AI flashcards (from links) ---------- */
+const CARD_BOXES = [1, 3, 7, 14, 30];      // Leitner intervals in days
+const deckDueCards = d => d.cards.filter(c => c.due <= todayStr());
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function newCard(c) { return { id: uid(), q: String(c.q || "").slice(0, 300), a: String(c.a || "").slice(0, 600), box: 0, due: todayStr(), reps: 0, lapses: 0 }; }
+function parseCards(out) {
+  const m = out.match(/\[[\s\S]*\]/);
+  if (!m) throw new Error("AI returned no cards. AI said: " + String(out).trim().replace(/\n/g, " ").slice(0, 80));
+  const arr = JSON.parse(m[0]).filter(c => c && c.q && c.a).slice(0, 20);
+  if (!arr.length) throw new Error("No usable cards in response");
+  return arr;
+}
+async function fetchReadable(url) {
+  const r = await fetch(HELPER + "/fetch?url=" + encodeURIComponent(url));
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error?.message || "Couldn't read the link — is the Stride helper running?");
+  if (!j.text || j.text.length < 80) throw new Error("Not enough readable text at that link");
+  return j;
+}
+const CARD_SYSTEM = `You write spaced-repetition flashcards from source material.
+Return ONLY a JSON array: [{"q":"question","a":"answer"}]
+Rules: 8-14 cards. Each card tests exactly ONE idea. Prefer why/how/compare/apply questions over trivia. Answers are 1-2 short plain-language sentences. Cover the source's most important concepts first. No numbering, no markdown.`;
+
+async function buildDeck(t, title, text, url, btn) {
+  if (!aiReady()) { toast("Connect an AI provider first — Settings → AI assistant"); return; }
+  if ((text || "").trim().length < 80) { toast("Not enough text to make cards from"); return; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin"></span> Writing cards…`; }
+  try {
+    const out = await callAI(CARD_SYSTEM, `Task: ${t ? t.title : ""}\nSource: ${title}\n\nContent:\n${text.slice(0, 14000)}`, 3500);
+    const deck = {
+      id: uid(), taskId: t ? t.id : null, url: url || null,
+      title: (title || (t && t.title) || "Flashcards").slice(0, 90),
+      source: url ? null : text.slice(0, 8000),          // keep pasted/PDF material for later deck improvement
+      createdAt: Date.now(), cards: parseCards(out).map(newCard)
+    };
+    db.decks.push(deck);
+    if (t && !t.srs) { t.srs = { stage: 0 }; t.srsId = t.srsId || t.id; }
+    save(); render();
+    toast(`${deck.cards.length} flashcards ready ✦`, "Review now", () => startCards(deck.id));
+  } catch (e) { render(); toast("Flashcards failed: " + String(e.message).slice(0, 90)); }
+}
+async function generateDeck(t, url, btn) {
+  if (!aiReady()) { toast("Connect an AI provider first — Settings → AI assistant"); return; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin"></span> Reading the link…`; }
+  try {
+    const page = await fetchReadable(url);
+    await buildDeck(t, page.title, page.text, url, btn && btn.isConnected ? btn : null);
+  } catch (e) { render(); toast("Flashcards failed: " + String(e.message).slice(0, 90) + " — you can paste the text instead"); }
+}
+async function extractFile(file) {
+  const buf = await file.arrayBuffer();
+  const r = await fetch(HELPER + "/extract?name=" + encodeURIComponent(file.name), { method: "POST", body: buf });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error?.message || "extraction failed — is the helper running?");
+  return j;
+}
+async function improveDeck(deck, btn) {
+  if (!aiReady()) { toast("Connect an AI provider first"); return; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spin"></span>`; }
+  try {
+    let content = deck.source || "";
+    if (!content && deck.url) { try { content = (await fetchReadable(deck.url)).text.slice(0, 10000); } catch (e) { /* improve from cards alone */ } }
+    const cur = deck.cards.map(c => ({ q: c.q, a: c.a, reviews: c.reps, timesForgotten: c.lapses }));
+    const out = await callAI(CARD_SYSTEM + `
+You are IMPROVING an existing deck. Keep good cards VERBATIM (identical "q"). Merge near-duplicates into one. Add cards for important concepts that are missing. Cards with high timesForgotten need clearer wording or splitting into smaller ideas. Return the complete revised array.`,
+      `Current cards with performance stats:\n${JSON.stringify(cur)}\n\nSource content:\n${content || "(unavailable — improve from the cards themselves)"}`, 3800);
+    const byQ = {}; deck.cards.forEach(c => byQ[c.q.trim().toLowerCase()] = c);
+    deck.cards = parseCards(out).map(c => {
+      const old = byQ[String(c.q).trim().toLowerCase()];
+      return old ? Object.assign(old, { a: String(c.a).slice(0, 600) }) : newCard(c);   // unchanged cards keep their schedule
+    });
+    save(); render(); toast("Deck improved — progress on kept cards preserved");
+  } catch (e) { render(); toast("Improve failed: " + String(e.message).slice(0, 90)); }
+}
+
+/* ---- post-completion revision offers ---- */
+const looksLikeLearning = t =>
+  t.links.length > 0 ||
+  /\b(learn|study|studied|read|reading|watch|lecture|course|tutorial|chapter|notes?|video|article|book|docs|documentation|research|practice|revise|review|reviewing|memorize|memorise|quiz|lesson|drill|recap|homework|flashcard|exam|test prep|revision|module|assignment|exercise)\b/i.test(t.title);
+
+function startRevision(t) {
+  if (t.srs) return;
+  const origin = todayStr();   // day this learning lineage started
+  t.srs = { stage: 0, origin }; t.srsId = t.srsId || t.id;
+  // re-running the "Worth remembering?" offer on the same task (e.g. after an uncheck/recheck)
+  // must not spawn a second stage-1 sibling clone
+  if (db.tasks.some(x => x !== t && x.srsId === t.srsId && x.srs && x.srs.stage === 1)) return;
+  db.tasks.push(newTask({
+    title: t.title, notes: t.notes, project: t.project, links: [...t.links],
+    est: Math.max(10, Math.round((t.est || 20) / 2)),
+    due: addDays(origin, SRS_PLAN[0]), srs: { stage: 1, origin }, srsId: t.srsId
+  }));
+}
+function markAsked(t) {
+  t.srsAsked = true;
+  // propagate to non-repeating clones with the same title, but leave recurring clones
+  // untouched so each occurrence independently offers the revision prompt
+  db.tasks.filter(x => !x.done && !x.repeat && x.title === t.title).forEach(x => x.srsAsked = true);
+}
+function maybeOfferRevision(t) {
+  // fresh *learn-tagged task (stage 0, revision already auto-scheduled by completeTask) or
+  // an auto-detected candidate that isn't tagged yet — either way, ask once per task.
+  if (t.srsAsked) return;
+  if (t.srs ? t.srs.stage === 0 : looksLikeLearning(t)) setTimeout(() => openRevisionOffer(t), 250);
+}
+function openRevisionOffer(t) {
+  const links = t.links.filter(u => !db.decks.some(d => d.url === u));
+  const hasNotes = (t.notes || "").trim().length >= 80;
+  const canCards = aiReady();
+  const alreadyScheduled = !!t.srs;   // *learn-tagged task: completeTask() already queued the first revision
+  const scheduledClone = alreadyScheduled ? db.tasks.find(x => !x.done && x.srs && x.srs.stage === 1 && x.srsId === (t.srsId || t.id)) : null;
+  let pdfFile = null;
+  showModal(`
+    <div class="modal-head"><h2>Worth remembering?</h2>
+      <p>You finished “${esc(t.title.slice(0, 70))}”. ${alreadyScheduled ? `Revision 1/${SRS_PLAN.length} is already scheduled${scheduledClone ? " · " + fmtDue(scheduledClone.due) : ""}.` : "Without revision, most of it fades within days."}</p></div>
+    <div class="modal-body">
+      ${alreadyScheduled ? "" : `<p style="font-size:13.5px;color:var(--muted)">Re-surfaces every 2 days for 3 rounds of review.</p>`}
+      ${links.length && aiReady() ? `<div class="detail-row" style="margin-top:12px"><label>Also make AI flashcards from</label>
+        ${links.map((u, i) => `<label class="set-row" style="gap:10px;font-size:13px;border-bottom:none;padding:6px 0">
+          <input type="checkbox" data-rl="${i}" checked style="width:16px;height:16px;accent-color:var(--accent);flex:none">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent-text)">${esc(u)}</span></label>`).join("")}</div>` : ""}
+      ${aiReady() ? `<div class="detail-row" style="margin-top:12px"><label>Paste what you read (optional)</label>
+        <textarea id="mRevPaste" placeholder="Paste the material — Stride writes a revision note onto this task and builds flashcards from it" style="min-height:90px"></textarea></div>
+      <div class="set-row" style="border-bottom:none;padding:6px 0;gap:10px">
+        <button class="add-sub" id="mRevPdfBtn" style="padding:0">＋ Attach a PDF…</button>
+        <span class="ai-note" id="mRevPdfName"></span>
+        <input type="file" id="mRevPdfFile" accept=".pdf,application/pdf,.txt,text/plain" hidden>
+      </div>` : ""}
+      ${!links.length && hasNotes && aiReady() ? `<p class="ai-note">No paste or PDF? Flashcards can also be made from this task's notes.</p>` : ""}
+      ${t.repeat || db.tasks.some(x => !x.done && x.repeat && x.title === t.title) ? `<p class="ai-note">Repeating task — whatever you pick, Stride won't ask about it again.</p>` : ""}
+    </div>
+    <div class="modal-foot">
+      <button class="pill-btn ghost" id="mSkip">No thanks</button>
+      <button class="pill-btn ${canCards ? "ghost" : ""}" id="mRev">${alreadyScheduled ? "Save note" : "Revise only"}</button>
+      ${canCards ? `<button class="pill-btn" id="mRevCards">${alreadyScheduled ? "Save note + flashcards" : "Revise + flashcards"}</button>` : ""}
+    </div>`);
+  const finish = () => { markAsked(t); save(); closeModal(); render(); };
+  const pasteVal = () => { const el = $("#mRevPaste"); return el ? el.value.trim() : ""; };
+  const pdfBtn = $("#mRevPdfBtn");
+  if (pdfBtn) {
+    pdfBtn.onclick = () => $("#mRevPdfFile").click();
+    $("#mRevPdfFile").onchange = e => { pdfFile = e.target.files[0] || null; $("#mRevPdfName").textContent = pdfFile ? "✓ " + pdfFile.name : ""; };
+  }
+  // Paste or attached PDF → revision note written onto THIS task, so every revision carries it
+  const materialText = async () => {
+    const pasted = pasteVal();
+    if (pasted.length >= 80) return pasted;
+    if (pdfFile) {
+      try { const x = await extractFile(pdfFile); return (x.text || "").trim(); }
+      catch (e) { toast("PDF failed: " + String(e.message).slice(0, 90)); return ""; }
+    }
+    return pasted;
+  };
+  const noteFromPaste = async (pasted, withCards) => {
+    toast("✎ Writing your revision note…");
+    try {
+      const pack = await makeRevisionPack(t.title, pasted);
+      t.notes = ((t.notes || "").trim() ? t.notes.trim() + "\n\n— Revision note —\n" : "") + pack.summary;
+      db.tasks.filter(x => !x.done && x.srsId === (t.srsId || t.id)).forEach(x => x.notes = t.notes);   // already-spawned revisions get it too
+      const cards = withCards ? (pack.cards || []).filter(c => c && c.q && c.a).slice(0, 20) : [];
+      if (cards.length) db.decks.push({ id: uid(), taskId: t.id, url: null, title: t.title.slice(0, 90), source: pasted.slice(0, 8000), createdAt: Date.now(), cards: cards.map(newCard) });
+      save(); render();
+      toast(withCards ? `Note + ${cards.length} cards linked to “${t.title.slice(0, 40)}”` : "Revision note saved onto the task");
+    } catch (e) { toast("Note failed: " + String(e.message).slice(0, 90)); }
+  };
+  $("#mSkip").onclick = finish;
+  $("#mRev").onclick = async () => {
+    const material = await materialText();
+    startRevision(t); if (!alreadyScheduled) toast(`Revision 1/${SRS_PLAN.length} scheduled · ${fmtDue(addDays(todayStr(), SRS_PLAN[0]))}`); finish();
+    if (material.length >= 80) await noteFromPaste(material, false);
+  };
+  const rc = $("#mRevCards");
+  if (rc) rc.onclick = async () => {
+    const sel = links.filter((u, i) => $(`#modalBox [data-rl="${i}"]`).checked);
+    const material = await materialText();
+    startRevision(t); if (!alreadyScheduled) toast(`Revision 1/${SRS_PLAN.length} scheduled · ${fmtDue(addDays(todayStr(), SRS_PLAN[0]))}`); finish();
+    if (material.length >= 80) await noteFromPaste(material, true);   // note propagates to the spawned revision too
+    else if (!sel.length && !hasNotes) { toast("No material for cards — paste text, attach a PDF, or attach a link next time"); return; }
+    if (sel.length) { for (const u of sel) await generateDeck(t, u); }
+    else if (material.length < 80 && hasNotes) await buildDeck(t, t.title + " — notes", t.notes);
+  };
+}
+/* ---- "I read something today" — paste → note + cards + schedule ---- */
+async function makeRevisionPack(title, text) {
+  const out = await callAI(`You are an automated data-extraction API. Your ONLY job is to output a single valid JSON object. Do not output any conversational prose, explanations, or markdown formatting around the JSON.
+EXPECTED JSON FORMAT:
+{"title":"short topic name","summary":"a revision note in markdown: 5-9 bullets covering the key concepts, definitions and takeaways, **bolding** each key term, under 220 words","cards":[{"q":"...","a":"..."}]}
+Card rules: 8-14 cards, each tests one idea, prefer why/how/compare questions, answers 1-2 short plain sentences.`,
+    `Topic hint: ${title || "(infer from the content)"}\n\nMaterial:\n${text.slice(0, 14000)}\n\nCRITICAL: Output ONLY the raw JSON object. Start your response with { and end with }.`, 4000);
+  const m = out.match(/\{[\s\S]*\}/);
+  if (!m) {
+    console.warn("AI output:", out);
+    if (out.length < 300) throw new Error("AI refused or didn't output JSON: " + out);
+    throw new Error("Model returned no pack JSON. Check console for output.");
+  }
+  const pack = JSON.parse(m[0]);
+  if (!pack.summary) throw new Error("No summary in response");
+  return pack;
+}
+function openReadCapture() {
+  if (!aiReady()) { toast("Connect an AI provider first"); openSettings(); return; }
+  showModal(`
+    <div class="modal-head"><h2>✎ What did you read today?</h2>
+      <p>Paste it below. Stride writes a revision note, makes flashcards, and schedules spaced review — first pass in 2 days.</p></div>
+    <div class="modal-body">
+      <div class="detail-row"><label>Topic (optional — AI infers it)</label>
+        <input type="text" id="mReadTitle" placeholder="e.g. OS scheduling — CFS"></div>
+      <div class="detail-row" style="margin-top:10px"><label>Material</label>
+        <textarea id="mReadText" placeholder="Paste the article, chapter, lecture notes, transcript…" style="min-height:170px"></textarea></div>
+    </div>
+    <div class="modal-foot"><button class="pill-btn ghost" id="mCancel">Cancel</button><button class="pill-btn" id="mReadGo">Create revision plan</button></div>`);
+  $("#mCancel").onclick = closeModal;
+  setTimeout(() => $("#mReadText").focus(), 60);
+  $("#mReadGo").onclick = async e => {
+    const text = $("#mReadText").value.trim(), userTitle = $("#mReadTitle").value.trim();
+    if (text.length < 80) { toast("Paste a bit more — at least a paragraph"); return; }
+    e.target.disabled = true; e.target.innerHTML = `<span class="spin"></span> Building your revision plan…`;
+    try {
+      const pack = await makeRevisionPack(userTitle, text);
+      const title = (userTitle || pack.title || "Today's reading").slice(0, 90);
+      const t = newTask({ title, notes: pack.summary, due: todayStr(), srsAsked: true });
+      t.done = true; t.doneAt = Date.now();                    // you already read it — that's stage 0
+      db.tasks.push(t);
+      startRevision(t);                                        // revisions carry the note with them
+      const nCards = (pack.cards || []).filter(c => c && c.q && c.a).length;
+      if (nCards) db.decks.push({ id: uid(), taskId: t.id, url: null, title, source: text.slice(0, 8000), createdAt: Date.now(), cards: pack.cards.filter(c => c && c.q && c.a).slice(0, 20).map(newCard) });
+      save(); closeModal(); state.view = "revise"; state.search = ""; render();
+      toast(`Revision note + ${nCards} cards ready · first review ${fmtDue(addDays(todayStr(), SRS_PLAN[0]))} ✦`);
+    } catch (err) {
+      e.target.disabled = false; e.target.textContent = "Create revision plan";
+      toast("Failed: " + String(err.message).slice(0, 90));
+    }
+  };
+}
+
+function openDeckChooser(t) {
+  const hasNotes = (t.notes || "").trim().length >= 80;
+  let pdfFile = null;
+  showModal(`
+    <div class="modal-head"><h2>Make flashcards</h2><p>Pick the material to study from — any or all of these:</p></div>
+    <div class="modal-body">
+      ${t.links.map((u, i) => { const has = db.decks.some(d => d.url === u); return `
+        <label class="set-row" style="gap:10px;font-size:13px;border-bottom:none;padding:6px 0">
+          <input type="checkbox" data-cl="${i}" ${has ? "" : "checked"} style="width:16px;height:16px;accent-color:var(--accent);flex:none">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent-text)">${esc(u)}</span>
+          ${has ? `<span class="ai-note" style="flex:none">deck exists</span>` : ""}</label>`; }).join("")}
+      ${hasNotes ? `<label class="set-row" style="gap:10px;font-size:13px;border-bottom:none;padding:6px 0">
+        <input type="checkbox" id="mNotes" ${t.links.length ? "" : "checked"} style="width:16px;height:16px;accent-color:var(--accent);flex:none">
+        <span>This task's notes (${(t.notes || "").trim().length} characters)</span></label>` : ""}
+      <div class="set-row" style="border-bottom:none;padding:6px 0;gap:10px">
+        <button class="add-sub" id="mPdfBtn" style="padding:0">＋ Attach a PDF…</button>
+        <span class="ai-note" id="mPdfName"></span>
+        <input type="file" id="mPdfFile" accept=".pdf,application/pdf,.txt,text/plain" hidden>
+      </div>
+      <div class="detail-row" style="margin-top:6px"><label>Or paste material</label>
+        <textarea id="mPaste" placeholder="Paste notes, an article, transcript… (when a link won't fetch, this always works)" style="min-height:90px"></textarea></div>
+    </div>
+    <div class="modal-foot"><button class="pill-btn ghost" id="mCancel">Cancel</button><button class="pill-btn" id="mGen">Generate</button></div>`);
+  $("#mCancel").onclick = closeModal;
+  $("#mPdfBtn").onclick = () => $("#mPdfFile").click();
+  $("#mPdfFile").onchange = e => { pdfFile = e.target.files[0] || null; $("#mPdfName").textContent = pdfFile ? "✓ " + pdfFile.name : ""; };
+  $("#mGen").onclick = async e => {
+    const jobs = [];
+    t.links.forEach((u, i) => { const cb = $(`#modalBox [data-cl="${i}"]`); if (cb && cb.checked) jobs.push({ type: "url", url: u }); });
+    if ($("#mNotes") && $("#mNotes").checked) jobs.push({ type: "text", title: t.title + " — notes", text: t.notes });
+    const pasted = $("#mPaste").value.trim();
+    if (pasted.length >= 80) jobs.push({ type: "text", title: t.title + " — pasted material", text: pasted });
+    if (pdfFile) jobs.push({ type: "file", file: pdfFile });
+    if (!jobs.length) { toast(pasted ? "Pasted text is too short (80+ characters)" : "Pick at least one source"); return; }
+    e.target.disabled = true; e.target.innerHTML = `<span class="spin"></span> Working…`;
+    closeModal();
+    for (const j of jobs) {
+      if (j.type === "url") await generateDeck(t, j.url);
+      else if (j.type === "text") await buildDeck(t, j.title, j.text);
+      else try { const x = await extractFile(j.file); await buildDeck(t, x.title, x.text); }
+      catch (err) { toast("PDF failed: " + String(err.message).slice(0, 90)); }
+    }
+  };
+}
+
+/* ---- review session (order shuffled every time) ---- */
+let cardSess = null;
+function startCards(deckId) {
+  const deck = db.decks.find(d => d.id === deckId); if (!deck || !deck.cards.length) return;
+  let q = deckDueCards(deck).map(c => c.id);
+  if (!q.length) q = deck.cards.map(c => c.id);       // nothing due → free practice round
+  cardSess = { deckId, queue: shuffle(q), i: 0, flipped: false, got: 0, again: 0 };
+  renderCards(); $("#cardScreen").classList.add("show");
+}
+const curCard = () => { const d = db.decks.find(x => x.id === cardSess.deckId); return d && d.cards.find(c => c.id === cardSess.queue[cardSess.i]); };
+function renderCards() {
+  const d = db.decks.find(x => x.id === cardSess.deckId);
+  const c = curCard(), el = $("#cardScreen");
+  if (!c) {
+    const perfect = cardSess.again === 0;
+    el.innerHTML = `
+      <button class="icon-btn focus-exit" id="csExit" aria-label="Close">✕</button>
+      <div class="focus-label">Session complete</div>
+      <h2 class="focus-title">${perfect ? "Every card, first try ✦" : "That's the session"}</h2>
+      <div class="cs-stats"><span><b>${cardSess.got}</b> recalled</span><span><b>${cardSess.again}</b> to relearn</span></div>
+      <div class="focus-actions"><button class="pill-btn" id="csClose">Done</button></div>`;
+    $("#csExit").onclick = exitCards; $("#csClose").onclick = exitCards;
+    if (perfect && cardSess.got > 0) celebrate();
+    return;
+  }
+  el.innerHTML = `
+    <button class="icon-btn focus-exit" id="csExit" aria-label="Exit (Esc)" style="font-size:18px">✕</button>
+    <div class="focus-label">${esc(d.title.slice(0, 60))} · ${cardSess.i + 1}/${cardSess.queue.length}</div>
+    <h2 class="card-q">${esc(c.q)}</h2>
+    ${cardSess.flipped
+      ? `<div class="card-a">${esc(c.a)}</div>
+         <div class="focus-actions">
+           <button class="pill-btn ghost" id="csAgain">Again <span class="k-hint">1</span></button>
+           <button class="pill-btn" id="csGot">Got it · next in ${CARD_BOXES[Math.min(c.box, CARD_BOXES.length - 1)]}d <span class="k-hint">2</span></button>
+         </div>`
+      : `<div class="focus-actions"><button class="pill-btn" id="csFlip">Show answer <span class="k-hint">space</span></button></div>`}`;
+  $("#csExit").onclick = exitCards;
+  if (cardSess.flipped) { $("#csAgain").onclick = () => answerCard(false); $("#csGot").onclick = () => answerCard(true); }
+  else $("#csFlip").onclick = () => { cardSess.flipped = true; renderCards(); };
+}
+function answerCard(got) {
+  const c = curCard();
+  if (got) { c.reps++; c.box = Math.min(c.box + 1, CARD_BOXES.length); c.due = addDays(todayStr(), CARD_BOXES[c.box - 1]); cardSess.got++; }
+  else { c.lapses++; c.box = 0; c.due = todayStr(); cardSess.again++; cardSess.queue.push(c.id); }   // resurfaces at the end of this session
+  cardSess.i++; cardSess.flipped = false; save(); renderCards();
+}
+function exitCards() { cardSess = null; $("#cardScreen").classList.remove("show"); render(); }
+
 function mdToHtml(md) {
   const lines = esc(md).split(/\r?\n/);
   let html = "", inList = false, para = [];
@@ -2134,8 +2737,8 @@ function firstRun() {
   localStorage.setItem("stride.seen", "1");
   const demo = [
     parseCapture("Press P to plan your day today ~5m"),
-    parseCapture("Try Focus mode with the F key today !high ~10m"),
-    newTask({ title: "Type a task above — words like “tomorrow”, “!high”, “~45m”, “#project” are understood", due: addDays(todayStr(), 1), est: 5 }),
+    parseCapture("Try Focus mode with the F key today !must ~10m"),
+    newTask({ title: "Type a task above — words like “tomorrow”, “!must”, “~45m”, “#project” are understood", due: addDays(todayStr(), 1), est: 5 }),
     parseCapture("Explore the command palette with Cmd+K someday"),
   ];
   demo.forEach(t => db.tasks.push(t));
