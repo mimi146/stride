@@ -1078,7 +1078,7 @@ function taskRow(t, opts = {}) {
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg>
     </button>
     <div class="task-body">
-      <div class="task-title">${esc(t.title) || "<i style='color:var(--faint)'>Untitled</i>"}</div>
+      <div class="task-title">${t.title ? (t.planId && findTask(t.planId) ? esc(findTask(t.planId).title) + " — " + esc(t.title) : esc(t.title)) : "<i style='color:var(--faint)'>Untitled</i>"}</div>
       ${chips ? `<div class="task-meta">${chips}</div>` : ""}${triage}
     </div>
     <div class="task-side">
