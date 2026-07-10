@@ -1356,7 +1356,10 @@ document.addEventListener("drop", e => {
   const src = db.tasks.find(t => t.id === dragId), dst = db.tasks.find(t => t.id === el.dataset.id);
   if (!src || !dst || src === dst) return;
   const above = e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2;
-  if (src.due !== dst.due && dst.due) src.due = dst.due;      // dragging across day groups reschedules
+  if (src.due !== dst.due && dst.due) {                       // dragging across day groups reschedules
+    if (src.planId) shiftPlanSiblings(src, daysDiff(dst.due) - daysDiff(src.due));
+    src.due = dst.due;
+  }
   src.order = dst.order + (above ? -0.5 : 0.5);
   db.tasks.filter(t => true).sort((a, b) => a.order - b.order).forEach((t, i) => t.order = i + 1);
   save(); render();
@@ -1421,6 +1424,11 @@ function splitIntoPlan(t, lines, skipWeekends) {
     if (i > 0) due = addPlanDay(due, skipWeekends);
     db.tasks.push(newTask({ title, project: t.project, due, planId: t.id, planIndex: i }));
   });
+}
+function shiftPlanSiblings(t, deltaDays) {
+  if (!t.planId || !deltaDays) return;
+  db.tasks.filter(x => x.planId === t.planId && x.planIndex > t.planIndex && !x.done && x.due)
+    .forEach(x => x.due = addDays(x.due, deltaDays));
 }
 function openSplitPlan(t) {
   showModal(`
@@ -1587,7 +1595,12 @@ function renderDetail() {
 
   const commit = fn => { fn(); save(); render(); };
   $("#dTitle").addEventListener("change", e => commit(() => t.title = e.target.value.trim()));
-  $("#dDue").addEventListener("change", e => commit(() => { t.due = e.target.value || null; if (t.due) t.someday = false; }));
+  $("#dDue").addEventListener("change", e => commit(() => {
+    const oldDue = t.due;
+    t.due = e.target.value || null;
+    if (t.due) t.someday = false;
+    if (t.planId && oldDue && t.due) shiftPlanSiblings(t, daysDiff(t.due) - daysDiff(oldDue));
+  }));
   $("#dTime").addEventListener("change", e => commit(() => t.startTime = e.target.value || null));
   $("#dEst").addEventListener("change", e => commit(() => t.est = +e.target.value));
   $("#dRep").addEventListener("change", e => commit(() => { t.repeat = e.target.value || null; if (t.repeat && !t.due) t.due = todayStr(); }));
