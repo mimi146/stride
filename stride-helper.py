@@ -140,13 +140,15 @@ def db_init():
           id TEXT PRIMARY KEY, title TEXT, notes TEXT, due TEXT, priority INTEGER,
           est INTEGER, project TEXT, someday INTEGER, done INTEGER, done_at INTEGER,
           created_at INTEGER, repeat_rule TEXT, mit INTEGER, ord REAL,
-          subtasks TEXT, links TEXT, srs TEXT, srs_id TEXT, srs_asked INTEGER);
+          subtasks TEXT, links TEXT, srs TEXT, srs_id TEXT, srs_asked INTEGER,
+          plan_id TEXT, plan_index INTEGER, is_plan_parent INTEGER);
         CREATE TABLE IF NOT EXISTS habits(id TEXT PRIMARY KEY, name TEXT, log TEXT);
         CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY, name TEXT, color TEXT);
         CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
         """)
         # migrate databases created before spaced repetition existed
-        for col in ("srs TEXT", "srs_id TEXT", "srs_asked INTEGER"):
+        for col in ("srs TEXT", "srs_id TEXT", "srs_asked INTEGER",
+                     "plan_id TEXT", "plan_index INTEGER", "is_plan_parent INTEGER"):
             try:
                 c.execute("ALTER TABLE tasks ADD COLUMN " + col)
             except sqlite3.OperationalError:
@@ -162,7 +164,7 @@ def save_state(state):
         c.execute("DELETE FROM habits")
         c.execute("DELETE FROM projects")
         for t in state.get("tasks", []):
-            c.execute("INSERT OR REPLACE INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+            c.execute("INSERT OR REPLACE INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 t.get("id"), t.get("title"), t.get("notes"), t.get("due"),
                 t.get("priority"), t.get("est"), t.get("project"),
                 int(bool(t.get("someday"))), int(bool(t.get("done"))),
@@ -170,7 +172,8 @@ def save_state(state):
                 int(bool(t.get("mit"))), t.get("order"),
                 json.dumps(t.get("subtasks", [])), json.dumps(t.get("links", [])),
                 json.dumps(t.get("srs")) if t.get("srs") else None, t.get("srsId"),
-                int(bool(t.get("srsAsked")))))
+                int(bool(t.get("srsAsked"))),
+                t.get("planId"), t.get("planIndex"), int(bool(t.get("isPlanParent")))))
         for h in state.get("habits", []):
             c.execute("INSERT OR REPLACE INTO habits VALUES (?,?,?)",
                       (h.get("id"), h.get("name"), json.dumps(h.get("log", []))))
@@ -197,6 +200,9 @@ def load_state():
             "srs": json.loads(r[16]) if len(r) > 16 and r[16] else None,
             "srsId": r[17] if len(r) > 17 else None,
             "srsAsked": bool(r[18]) if len(r) > 18 else False,
+            "planId": r[19] if len(r) > 19 else None,
+            "planIndex": r[20] if len(r) > 20 else None,
+            "isPlanParent": bool(r[21]) if len(r) > 21 else False,
         } for r in c.execute("SELECT * FROM tasks")]
         state["habits"] = [{"id": r[0], "name": r[1], "log": json.loads(r[2] or "[]")}
                            for r in c.execute("SELECT * FROM habits")]
